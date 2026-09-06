@@ -1,0 +1,306 @@
+/*
+    view-scene.css - the Scene view. The scrubber is the one loud element:
+    a strip of sky from midnight to midnight with the sun riding it. The
+    group editor around it stays quiet.
+
+    Invector Embedded Systems AB
+*/
+
+.view-scene h2 { font-size: 1.05em; font-weight: 600; margin: 0 0 8px 0; }
+
+.view-scene .hint {
+    color: var(--muted);
+    font-size: 0.85em;
+    max-width: 58ch;
+    margin: 10px 0 0 0;
+}
+
+.view-scene .field > span { color: var(--muted); font-size: 0.85em; }
+.view-scene input[type="number"] { font-variant-numeric: tabular-nums; }
+.view-scene .field .switch { align-self: flex-start; margin-top: 8px; }
+
+.view-scene .gg {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+    gap: 0 10px;
+}
+
+.view-scene .gg.pair {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+/* Clock settings are short values: keep the boxes short and together. */
+.view-scene .gg.narrow { display: flex; flex-wrap: wrap; }
+.view-scene .gg.narrow .field { flex: 1 1 120px; max-width: 200px; }
+
+/* ------------------------------------------------------------- clock --- */
+
+.view-scene .clock-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+}
+
+.view-scene .town-time {
+    font-size: 44px;
+    font-weight: 300;
+    line-height: 1;
+    letter-spacing: -0.015em;
+}
+
+.view-scene .lit { color: var(--muted); font-size: 0.9em; }
+
+.view-scene .seg {
+    display: flex;
+    margin: 12px 0;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.view-scene .seg-btn {
+    flex: 1;
+    min-height: 44px;
+    padding: 0 6px;
+    border: 0;
+    border-right: 1px solid var(--line);
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    font-size: 0.95em;
+    cursor: pointer;
+}
+
+.view-scene .seg-btn:last-child { border-right: 0; }
+
+.view-scene .seg-btn[aria-pressed="true"] {
+    background: rgba(244, 182, 66, 0.14);
+    color: var(--text);
+    box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+/* The strip. Nothing is clipped: the sun may hang over either end. */
+.view-scene .sky-wrap { position: relative; height: 56px; }
+
+.view-scene .sky {
+    position: absolute;
+    inset: 0;
+    border-radius: 8px;
+    box-shadow: inset 0 0 0 1px rgba(215, 223, 230, 0.08);
+}
+
+/* The horizon: the ground the town stands on, under the sky. */
+.view-scene .sky-wrap::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 9px;
+    border-radius: 0 0 8px 8px;
+    background: var(--bg);
+    box-shadow: 0 -1px 0 rgba(215, 223, 230, 0.12);
+    pointer-events: none;
+}
+
+.view-scene .sun {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    width: 16px;
+    height: 16px;
+    margin: -8px 0 0 -8px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 14px 5px var(--glow);
+}
+
+.view-scene .sky-wrap:not(.locked) .sun {
+    box-shadow: 0 0 14px 5px var(--glow), 0 0 0 3px rgba(11, 15, 20, 0.55);
+}
+
+.view-scene .scrub {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 56px;
+    margin: 0;
+    padding: 0;
+    background: transparent;
+    border: 0;
+    appearance: none;
+    -webkit-appearance: none;
+    touch-action: none;
+    cursor: grab;
+}
+
+.view-scene .scrub:disabled { cursor: default; }
+.view-scene .scrub:focus-visible { outline-offset: 3px; border-radius: 8px; }
+
+.view-scene .scrub::-webkit-slider-runnable-track { height: 56px; background: transparent; }
+.view-scene .scrub::-moz-range-track { height: 56px; background: transparent; }
+
+.view-scene .scrub::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 44px;
+    height: 44px;
+    border: 0;
+    background: transparent;
+}
+
+.view-scene .scrub::-moz-range-thumb {
+    width: 44px;
+    height: 44px;
+    border: 0;
+    background: transparent;
+}
+
+.view-scene .ticks {
+    position: relative;
+    height: 30px;
+    margin-bottom: 6px;
+    font-size: 0.78em;
+    color: var(--muted);
+}
+
+.view-scene .tick { position: absolute; top: 0; }
+
+.view-scene .tick::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    width: 1px;
+    height: 7px;
+    background: var(--muted);
+}
+
+.view-scene .tlabel {
+    position: absolute;
+    top: 11px;
+    transform: translateX(-50%);
+    white-space: nowrap;
+}
+
+/* A tick close to an end keeps its label inside the strip. */
+.view-scene .tlabel.start { transform: translateX(0); }
+.view-scene .tlabel.end { transform: translateX(-100%); }
+
+.view-scene .readout { color: var(--muted); font-size: 0.85em; }
+
+/* ------------------------------------------------------------ groups --- */
+
+.view-scene .chead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+
+.view-scene .grp { border-bottom: 1px solid var(--line); }
+.view-scene .grp:last-child { border-bottom: 0; }
+
+.view-scene .grow {
+    display: grid;
+    grid-template-columns: 1fr auto auto 12px;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-height: 44px;
+    padding: 8px 0;
+    background: transparent;
+    border: 0;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+/* A caret, so open and closed differ in shape and not only in colour. */
+.view-scene .grow::after {
+    content: "";
+    width: 0;
+    height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 6px solid var(--muted);
+    transition: transform var(--transition-fast);
+}
+
+.view-scene .grow[aria-expanded="true"]::after {
+    transform: rotate(180deg);
+    border-top-color: var(--accent);
+}
+
+.view-scene .gname {
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.view-scene .gbeh {
+    padding: 2px 9px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    color: var(--muted);
+    font-size: 0.78em;
+}
+
+.view-scene .gcount { color: var(--muted); font-size: 0.85em; }
+/* A group whose lamp list this page cannot read, so the collapsed row says
+   so too and not only the open editor. */
+.view-scene .gcount.bad { color: var(--fault); }
+
+.view-scene .discs {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    padding-bottom: 12px;
+}
+
+.view-scene .more { color: var(--muted); font-size: 0.75em; margin-left: 4px; }
+
+.view-scene .gform { padding-bottom: 12px; }
+
+.view-scene .err {
+    color: var(--fault);
+    font-size: 0.85em;
+    margin: -4px 0 10px 0;
+}
+
+.view-scene input[aria-invalid="true"] { border-color: var(--fault); }
+
+.view-scene .btn.danger {
+    background: transparent;
+    border-color: var(--fault);
+    color: var(--fault);
+    margin-top: 4px;
+}
+
+.view-scene .actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 12px;
+}
+
+.view-scene .mark { color: var(--accent); font-size: 0.85em; }
+
+.view-scene .mark:not(:empty)::before {
+    content: "";
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    margin-right: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+}
+
+@media (min-width: 720px) {
+    .view-scene .town-time { font-size: 56px; }
+    .view-scene .cols { grid-template-columns: 1.7fr 1fr; }
+}

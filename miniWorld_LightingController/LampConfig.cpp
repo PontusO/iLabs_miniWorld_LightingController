@@ -11,85 +11,72 @@
 
 // ---------------------------------------------------------------------------
 
-const char *LampConfig::hardwareName(LampHardware h) {
-    switch (h) {
-        case LampHardware::SX1503: return "sx1503";
-        case LampHardware::AL5887: return "al5887";
-        default:                   return "none";
+uint16_t LampConfig::lampCount() const {
+    uint32_t total = 0;
+    for (uint8_t i = 0; i < LAMPS_NUM_BUSES; i++) {
+        total += (uint32_t)(16 * buses[i].sx1503) + (uint32_t)(36 * buses[i].al5887);
     }
+    return (uint16_t)total;
 }
 
-bool LampConfig::parseHardware(const char *name, LampHardware &out) {
-    if (!name) {
-        return false;
+uint8_t LampConfig::deviceCount() const {
+    uint16_t total = 0;
+    for (uint8_t i = 0; i < LAMPS_NUM_BUSES; i++) {
+        total = (uint16_t)(total + (buses[i].sx1503 ? 1 : 0) + buses[i].al5887);
     }
-    if (!strcasecmp(name, "sx1503")) { out = LampHardware::SX1503; return true; }
-    if (!strcasecmp(name, "al5887")) { out = LampHardware::AL5887; return true; }
-    if (!strcasecmp(name, "none"))   { out = LampHardware::None;   return true; }
+    return (uint8_t)total;
+}
+
+bool LampConfig::anyHardware() const {
+    for (uint8_t i = 0; i < LAMPS_NUM_BUSES; i++) {
+        if (buses[i].sx1503 || buses[i].al5887) {
+            return true;
+        }
+    }
     return false;
-}
-
-uint8_t LampConfig::maxDevices() const {
-    switch (hardware) {
-        case LampHardware::SX1503: return 12;   // 2 hw + 7 PIO + 3 bit-bang buses
-        case LampHardware::AL5887: return 4;    // addresses 0x30..0x33
-        default:                   return 0;
-    }
-}
-
-uint16_t LampConfig::lampsPerDevice() const {
-    switch (hardware) {
-        case LampHardware::SX1503: return 16;
-        case LampHardware::AL5887: return 36;
-        default:                   return 0;
-    }
 }
 
 bool LampConfig::clamp() {
     LampConfig before = *this;
 
-    uint8_t max = maxDevices();
-    if (devices > max) {
-        devices = max;
-    }
-    if (hardware != LampHardware::None && devices == 0) {
-        devices = 1;
-    }
-    if (hardware == LampHardware::None) {
-        devices = 0;
+    for (uint8_t i = 0; i < LAMPS_NUM_BUSES; i++) {
+        if (buses[i].al5887 > LAMPS_MAX_AL5887_PER_BUS) {
+            buses[i].al5887 = LAMPS_MAX_AL5887_PER_BUS;
+        }
     }
 
     if (busSpeed != 100000 && busSpeed != 400000 && busSpeed != 1000000) {
         busSpeed = 400000;
     }
 
-    // Options that do not apply to the selected hardware are neutralised so
-    // the stored file does not carry misleading state.
-    if (hardware != LampHardware::SX1503) {
-        activeLow = false;
-    }
-    if (hardware != LampHardware::AL5887) {
-        rgb = false;
-    }
-
     return *this == before;
 }
 
 bool LampConfig::operator==(const LampConfig &o) const {
-    return hardware == o.hardware &&
-           devices == o.devices &&
-           busSpeed == o.busSpeed &&
-           activeLow == o.activeLow &&
-           rgb == o.rgb;
+    if (busSpeed != o.busSpeed || activeLow != o.activeLow || rgb != o.rgb) {
+        return false;
+    }
+    for (uint8_t i = 0; i < LAMPS_NUM_BUSES; i++) {
+        if (buses[i].sx1503 != o.buses[i].sx1503 || buses[i].al5887 != o.buses[i].al5887) {
+            return false;
+        }
+    }
+    return true;
 }
 
 void LampConfig::toJson(String &out) const {
     JsonDocument doc;
-    doc["hardware"] = hardwareName(hardware);
-    doc["devices"] = devices;
     doc["busSpeed"] = busSpeed;
     doc["activeLow"] = activeLow;
     doc["rgb"] = rgb;
+
+    JsonArray arr = doc["buses"].to<JsonArray>();
+    for (uint8_t i = 0; i < LAMPS_NUM_BUSES; i++) {
+        JsonObject o = arr.add<JsonObject>();
+        o["sx1503"] = buses[i].sx1503;
+        o["al5887"] = buses[i].al5887;
+    }
+
     out = "";
     serializeJson(doc, out);
 }
@@ -106,24 +93,6 @@ bool LampConfig::fromJson(const String &in, String *error) {
 
     LampConfig next = *this;
 
-    if (doc["hardware"].is<const char *>()) {
-        if (!parseHardware(doc["hardware"], next.hardware)) {
-            if (error) {
-                *error = "hardware must be none, sx1503 or al5887";
-            }
-            return false;
-        }
-    }
-    if (doc["devices"].is<int>()) {
-        int d = doc["devices"];
-        if (d < 0 || d > 255) {
-            if (error) {
-                *error = "devices out of range";
-            }
-            return false;
-        }
-        next.devices = (uint8_t)d;
-    }
     if (doc["busSpeed"].is<uint32_t>()) {
         next.busSpeed = doc["busSpeed"];
     }
@@ -134,13 +103,47 @@ bool LampConfig::fromJson(const String &in, String *error) {
         next.rgb = doc["rgb"];
     }
 
-    // Report rather than silently fix a device count the hardware cannot do.
-    if (next.hardware != LampHardware::None && next.devices > next.maxDevices()) {
-        if (error) {
-            *error = String("devices: ") + hardwareName(next.hardware) +
-                     " supports at most " + next.maxDevices();
+    // buses follows the same merge rule as busSpeed/activeLow/rgb: absent
+    // (or explicit null) keeps the existing buses untouched. Present as an
+    // array replaces all 12 entries: any index the array does not cover
+    // becomes an empty bus. Present as anything else is an error.
+    JsonVariant busesField = doc["buses"];
+    if (!busesField.isNull()) {
+        if (!busesField.is<JsonArray>()) {
+            if (error) {
+                *error = "buses must be an array";
+            }
+            return false;
         }
-        return false;
+        JsonArray arr = busesField.as<JsonArray>();
+        if (arr.size() > LAMPS_NUM_BUSES) {
+            if (error) {
+                *error = "buses: at most 12 entries";
+            }
+            return false;
+        }
+        for (uint8_t i = 0; i < LAMPS_NUM_BUSES; i++) {
+            next.buses[i] = BusConfig();
+        }
+        uint8_t i = 0;
+        for (JsonVariant v : arr) {
+            BusConfig b;
+            if (v["sx1503"].is<bool>()) {
+                b.sx1503 = v["sx1503"];
+            }
+            if (v["al5887"].is<int>()) {
+                int n = v["al5887"];
+                if (n < 0 || n > LAMPS_MAX_AL5887_PER_BUS) {
+                    if (error) {
+                        *error = String("buses[") + i + "].al5887 must be 0..4";
+                    }
+                    return false;
+                }
+                b.al5887 = (uint8_t)n;
+            }
+            next.buses[i] = b;
+            i++;
+        }
     }
 
     next.clamp();

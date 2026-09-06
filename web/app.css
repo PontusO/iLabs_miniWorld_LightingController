@@ -1,0 +1,463 @@
+/*
+    app.css - visual system for the miniWorld web GUI. "Night town" theme:
+              dark ground, amber lamp accent, sky gradient for the scene
+              scrubber. Tokens match spec section 4.3 exactly.
+
+    Invector Embedded Systems AB
+*/
+
+:root {
+    --bg: #0b0f14;
+    --card: #141b23;
+    --line: #243040;
+    --text: #d7dfe6;
+    --muted: #8a98a6;
+    --accent: #f4b642;
+    --glow: #ffd47a;
+    --ok: #63c27a;
+    --fault: #ea6a4e;
+    --sky-day: #7fb2e5;
+    --sky-dusk: #e08a4a;
+    --sky-night: #0b0f14;
+    --radius: 10px;
+    --transition-fast: 400ms;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+/* Several layout classes below set display, which would otherwise beat the
+   hidden attribute. Views rely on node.hidden = true, so make it win. */
+[hidden] {
+    display: none !important;
+}
+
+html {
+    background: var(--bg);
+}
+
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 16px;
+    line-height: 1.4;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+}
+
+h1, h2, h3, p, ul, ol {
+    margin: 0 0 0.5em 0;
+}
+
+h1, h2, h3 {
+    text-wrap: balance;
+}
+
+/* Native selects need their colours stated or Windows dark mode paints the
+   list white on white. */
+option {
+    background-color: var(--card);
+    color: var(--text);
+}
+
+/* The header is sticky, so anything scrolled into view (a focused field, a
+   heading) has to keep clear of it. */
+main#view * {
+    scroll-margin-top: 68px;
+}
+
+/* Keyboard bypass for the repeated header. Off screen until focused. */
+.skip {
+    position: absolute;
+    left: -9999px;
+    top: 0;
+    z-index: 30;
+    min-height: 44px;
+    padding: 0 16px;
+    border: 1px solid var(--accent);
+    border-radius: 8px;
+    background: var(--card);
+    color: var(--text);
+    font: inherit;
+    cursor: pointer;
+}
+
+.skip:focus {
+    left: 8px;
+    top: 8px;
+}
+
+a {
+    color: inherit;
+}
+
+/* Tabular numerals for every time and count in the town clock, status
+   lines, and lamp/device counters. */
+time, .tnum {
+    font-variant-numeric: tabular-nums;
+}
+
+/* -------------------------------------------------------------------- */
+/* Header and nav                                                       */
+/* -------------------------------------------------------------------- */
+
+/* The header has to fit a 320 px phone without the page scrolling
+   sideways. The brand keeps its lamp glyph but drops its text below
+   480 px, the nav links share what is left, and the "no contact" badge
+   is allowed to wrap onto a second line rather than push the page wide. */
+header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+    padding: 8px 10px;
+    background: var(--card);
+    border-bottom: 1px solid var(--line);
+}
+
+.brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 0 0 auto;
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+}
+
+/* A small amber lamp, drawn with CSS only: a disc with a warm glow and a
+   short post beneath it, no image asset. */
+.lamp-glyph {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 8px 2px var(--glow);
+    position: relative;
+}
+
+.lamp-glyph::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 100%;
+    width: 2px;
+    height: 6px;
+    background: var(--muted);
+    transform: translateX(-50%);
+}
+
+.brand-name {
+    letter-spacing: 0.02em;
+}
+
+nav {
+    display: flex;
+    gap: 2px;
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+nav a {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 44px;
+    padding: 0 6px;
+    text-align: center;
+    white-space: nowrap;
+    text-decoration: none;
+    color: var(--muted);
+    border-bottom: 2px solid transparent;
+}
+
+nav a.active {
+    color: var(--text);
+    border-bottom-color: var(--accent);
+}
+
+@media (max-width: 480px) {
+    .brand-name {
+        display: none;
+    }
+
+    nav a {
+        padding: 0 2px;
+        font-size: 0.95em;
+    }
+}
+
+/* Above phone widths there is room to spare, so the links stop growing
+   and sit as compact tabs on the left with the badge on the right. */
+@media (min-width: 481px) {
+    nav a {
+        flex: 0 0 auto;
+        padding: 0 12px;
+    }
+}
+
+.badge {
+    flex: 0 0 auto;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: var(--fault);
+    color: var(--bg);
+    font-size: 0.85em;
+    font-weight: 600;
+}
+
+/* -------------------------------------------------------------------- */
+/* Layout                                                                */
+/* -------------------------------------------------------------------- */
+
+main#view {
+    padding: 12px;
+    max-width: 960px;
+    margin: 0 auto;
+}
+
+.cols {
+    display: block;
+}
+
+@media (min-width: 720px) {
+    .cols {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+        align-items: start;
+    }
+}
+
+/* -------------------------------------------------------------------- */
+/* Cards, rows, fields                                                   */
+/* -------------------------------------------------------------------- */
+
+.card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 12px;
+    margin-bottom: 12px;
+}
+
+.row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--line);
+}
+
+.row:last-child {
+    border-bottom: none;
+}
+
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 10px;
+}
+
+.field label {
+    color: var(--muted);
+    font-size: 0.9em;
+}
+
+.field input,
+.field select {
+    background: var(--bg);
+    border: 1px solid var(--line);
+    color: var(--text);
+    border-radius: 6px;
+    padding: 8px 10px;
+    min-height: 44px;
+    font-size: 1em;
+    font-family: inherit;
+}
+
+/* -------------------------------------------------------------------- */
+/* Buttons                                                               */
+/* -------------------------------------------------------------------- */
+
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    min-width: 44px;
+    padding: 0 16px;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    font-size: 1em;
+    font-family: inherit;
+    cursor: pointer;
+}
+
+.btn.primary {
+    background: var(--accent);
+    color: #1a1305;
+    font-weight: 600;
+}
+
+.btn.secondary {
+    background: transparent;
+    border-color: var(--line);
+    color: var(--text);
+}
+
+.btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+/* -------------------------------------------------------------------- */
+/* Switch: a checkbox styled as a toggle                                 */
+/* -------------------------------------------------------------------- */
+
+.switch {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    width: 44px;
+    height: 26px;
+}
+
+.switch input {
+    position: absolute;
+    opacity: 0;
+    width: 44px;
+    height: 44px;
+    margin: -9px 0 0 0;
+    cursor: pointer;
+}
+
+.switch .track {
+    width: 44px;
+    height: 26px;
+    border-radius: 999px;
+    background: var(--line);
+    transition: background var(--transition-fast);
+}
+
+.switch .thumb {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--text);
+    transition: transform var(--transition-fast);
+}
+
+.switch input:checked ~ .track {
+    background: var(--accent);
+}
+
+.switch input:checked ~ .thumb {
+    transform: translateX(18px);
+    background: #1a1305;
+}
+
+.switch input:focus-visible ~ .track {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+/* -------------------------------------------------------------------- */
+/* Lamp discs                                                            */
+/* -------------------------------------------------------------------- */
+
+.lamp {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--line);
+    transition: background var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.lamp.on {
+    background: var(--accent);
+    box-shadow: 0 0 6px 2px var(--glow);
+}
+
+.lamp.off {
+    background: var(--line);
+    box-shadow: none;
+}
+
+/* -------------------------------------------------------------------- */
+/* Toasts                                                                */
+/* -------------------------------------------------------------------- */
+
+#toasts {
+    position: fixed;
+    left: 50%;
+    bottom: 16px;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 20;
+    align-items: center;
+}
+
+.toast {
+    padding: 10px 16px;
+    border-radius: 8px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    color: var(--text);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.toast.info {
+    border-color: var(--line);
+}
+
+.toast.ok {
+    border-color: var(--ok);
+    color: var(--ok);
+}
+
+.toast.error {
+    border-color: var(--fault);
+    color: var(--fault);
+}
+
+/* -------------------------------------------------------------------- */
+/* Focus visibility                                                      */
+/* -------------------------------------------------------------------- */
+
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+.btn:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+/* -------------------------------------------------------------------- */
+/* Reduced motion                                                        */
+/* -------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+    * {
+        transition: none !important;
+        animation: none !important;
+    }
+}

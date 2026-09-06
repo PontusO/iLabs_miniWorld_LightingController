@@ -2,17 +2,39 @@
 #
 # The arduino-pico core does not assemble .pio files that live in a sketch,
 # so this Makefile does it: every <name>.pio in the sketch folder produces
-# <name>.pio.h through pioasm, and only when the .pio is newer. The compile
-# and upload targets depend on that step, so a changed PIO program can never
-# be built against a stale header.
+# <name>.pio.h through pioasm, and only when the .pio is newer. The web GUI
+# is baked into the firmware the same way: buildweb.py inlines and gzips
+# web/ into WebUI.gen.h. compile depends on both, so neither can go stale.
 #
-#   make            compile only
-#   make upload     compile and flash, PORT=/dev/ttyACM0 by default
-#   make pio        assemble the PIO headers and stop
-#   make clean      remove generated PIO headers
+#   make              compile into ./build
+#   make upload       compile, check the image, find the board by USB
+#                     identity, flash, verify the boot banner
+#   make erase-net    same, with a build that forgets the stored WiFi
+#                     network at boot (flash a normal build afterwards)
+#   make console      read the board's USB console
+#   make pio          assemble the PIO headers and stop
+#   make web          build the embedded web GUI header and stop
+#   make mock         run the mock API server on port 8080
+#   make check        run the API checks against the mock server
+#   make clean        remove generated headers and build directories
 #
-# Override ARDUINO_CLI, PIOASM, FQBN or PORT on the command line if the
-# defaults do not match the machine.
+# Rules that keep a wrong image off the board, learnt the hard way:
+#   - every compile goes to an explicit build directory (BUILD_PATH,
+#     default ./build) and upload takes its image only from there.
+#     arduino-cli's own cache is keyed on the sketch path as typed, this
+#     repo is reachable through two paths, and a stale image from the other
+#     cache directory once ended up on a board and hung it;
+#   - upload depends on compile, so the image is always the tree's;
+#   - tools/checkimage.sh refuses an image that is older than any source,
+#     is not this sketch, or is outside the size band of a real build;
+#   - tools/findboard.sh finds the board by USB id (2e8a:100d, or the
+#     RPI-RP2 drive in BOOTSEL) and refuses to guess between two;
+#   - tools/flash.sh reads the boot banner afterwards and fails unless its
+#     build stamp equals the image's.
+#
+# Override ARDUINO_CLI, PIOASM, FQBN, PORT (a /dev/ttyACMn or an RPI-RP2
+# mount) or BUILD_PATH on the command line. DEFINES="-DFOO -DBAR" adds
+# preprocessor defines to both the C and the C++ compile.
 #
 # Invector Embedded Systems AB
 
@@ -20,7 +42,7 @@ SKETCH      := miniWorld_LightingController
 BOARD       := rp2040:rp2040:challenger_nb_2040_wifi
 FLASH       := 8388608_1048576
 FQBN        := $(BOARD):flash=$(FLASH)
-PORT        ?= /dev/ttyACM0
+PORT        ?=
 
 ARDUINO_CLI ?= $(firstword $(wildcard $(HOME)/bin/arduino-cli) $(shell command -v arduino-cli 2>/dev/null))
 PIOASM      ?= $(lastword $(sort $(wildcard $(HOME)/.arduino15/packages/rp2040/tools/pqt-pioasm/*/pioasm)))
@@ -28,7 +50,21 @@ PIOASM      ?= $(lastword $(sort $(wildcard $(HOME)/.arduino15/packages/rp2040/t
 PIO_SRC     := $(wildcard $(SKETCH)/*.pio)
 PIO_HDR     := $(PIO_SRC:.pio=.pio.h)
 
-.PHONY: all compile upload pio clean check-tools
+# The directory itself is a dependency so that deleting a view file also
+# rebuilds the header; a wildcard alone only sees the survivors.
+WEB_SRC     := $(wildcard web/*.html web/*.css web/*.js) web
+WEB_HDR     := $(SKETCH)/WebUI.gen.h
+
+BUILD_PATH  ?= $(CURDIR)/build
+DEFINES     ?=
+MARKER      ?=
+BUILD_FLAGS := --build-path $(BUILD_PATH) \
+               $(if $(DEFINES),--build-property "compiler.cpp.extra_flags=$(DEFINES)" \
+                               --build-property "compiler.c.extra_flags=$(DEFINES)",)
+
+export ARDUINO_CLI FQBN
+
+.PHONY: all compile upload erase-net console pio web mock check clean check-tools
 
 all: compile
 
@@ -37,14 +73,38 @@ pio: check-tools $(PIO_HDR)
 %.pio.h: %.pio
 	$(PIOASM) -o c-sdk $< $@
 
-compile: pio
-	$(ARDUINO_CLI) compile --fqbn $(FQBN) --warnings default $(SKETCH)
+web: $(WEB_HDR)
 
-upload: pio
-	$(ARDUINO_CLI) upload --fqbn $(FQBN) -p $(PORT) $(SKETCH)
+$(WEB_HDR): $(WEB_SRC) tools/buildweb.py
+	python3 tools/buildweb.py web $(WEB_HDR)
+
+# The mock server serves web/ unbuilt and fakes every API, so the GUI can
+# be worked on without hardware.
+mock:
+	python3 tools/mockserver.py
+
+check:
+	tools/apicheck.sh http://localhost:8080
+
+compile: pio web
+	$(ARDUINO_CLI) compile --fqbn $(FQBN) --warnings default $(BUILD_FLAGS) $(SKETCH)
+
+upload: compile
+	tools/flash.sh $(BUILD_PATH) "$(PORT)" "$(MARKER)"
+
+# A one-shot build that erases /net.json at boot, in its own directory so
+# it never masquerades as the normal image. The marker check proves the
+# flag really reached the compile.
+erase-net:
+	$(MAKE) upload BUILD_PATH=$(CURDIR)/build-erase DEFINES=-DMINIWORLD_ERASE_NET \
+	        MARKER="erased by MINIWORLD_ERASE_NET" PORT="$(PORT)"
+
+console:
+	tools/console.sh "$(PORT)"
 
 clean:
-	rm -f $(PIO_HDR)
+	rm -f $(PIO_HDR) $(WEB_HDR)
+	rm -rf $(CURDIR)/build $(CURDIR)/build-erase
 
 check-tools:
 	@test -x "$(PIOASM)" || { echo "pioasm not found; set PIOASM=/path/to/pioasm"; exit 1; }

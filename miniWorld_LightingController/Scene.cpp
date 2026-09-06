@@ -317,7 +317,11 @@ bool SceneConfig::fromJson(const String &in, String *error) {
         return false;
     }
 
-    SceneConfig next = *this;
+    // Static: a SceneConfig is about 4.8 kB and the core-0 stack is far
+    // smaller. The sketch is single-threaded and fromJson() never nests with
+    // itself, so one working copy can be shared.
+    static SceneConfig next;
+    next = *this;
 
     JsonObjectConst loc = doc["location"];
     if (!loc.isNull()) {
@@ -415,10 +419,10 @@ bool SceneStore::load(SceneConfig &cfg) {
     String body = f.readString();
     f.close();
 
-    SceneConfig parsed;
-    if (!parsed.fromJson(body)) return false;
-    cfg = parsed;
-    return true;
+    // Parsed straight into cfg, with no intermediate copy: a SceneConfig is
+    // about 4.8 kB, too much for the stack, and fromJson() only commits on
+    // success, so cfg is untouched when the file does not parse.
+    return cfg.fromJson(body);
 }
 
 bool SceneStore::save(const SceneConfig &cfg) {

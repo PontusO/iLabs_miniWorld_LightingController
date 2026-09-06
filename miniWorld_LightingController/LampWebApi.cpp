@@ -21,14 +21,22 @@ void LampWebApi::statusJson(String &body) {
     JsonDocument doc;
     const LampConfig &cfg = Lamps.config();
 
-    doc["hardware"] = LampConfig::hardwareName(cfg.hardware);
-    doc["devices"] = Lamps.deviceCount();
     doc["lamps"] = Lamps.count();
+    doc["devices"] = Lamps.deviceCount();
     doc["intensity"] = Lamps.intensitySupported();
     doc["resolutionBits"] = Lamps.count() ? Lamps.resolutionBits(0) : 0;
-    doc["busSpeed"] = cfg.busSpeed;
-    doc["activeLow"] = cfg.activeLow;
-    doc["rgb"] = cfg.rgb;
+
+    JsonArray buses = doc["buses"].to<JsonArray>();
+    for (uint8_t b = 0; b < LAMPS_NUM_BUSES; b++) {
+        const BusConfig &bc = cfg.buses[b];
+        JsonObject bo = buses.add<JsonObject>();
+        bo["sx1503"] = bc.sx1503 ? (Lamps.busSx1503Faulted(b) ? "fault" : "ok") : "none";
+
+        JsonArray al = bo["al5887"].to<JsonArray>();
+        for (uint8_t n = 0; n < bc.al5887; n++) {
+            al.add(Lamps.busAl5887Faulted(b, n) ? "fault" : "ok");
+        }
+    }
 
     JsonArray faults = doc["faults"].to<JsonArray>();
     for (uint8_t i = 0; i < Lamps.deviceCount(); i++) {
@@ -135,5 +143,5 @@ int LampWebApi::handle(const String &method, const String &path,
         return error(405, "method not allowed", body);
     }
 
-    return 404;
+    return error(404, "not found", body);
 }

@@ -1,16 +1,22 @@
 /*
-    Application view: the Lamps API plus the web API hooked to an HTTP
-    server. The request loop below is a minimal adaptor written against the
-    WiFiClient interface of WiFiEspAT. Replace it with the product's own
-    server; the only thing it has to do is call LampWebApi::handle() for
-    paths it owns.
+    miniWorld lighting controller.
+
+    setup() brings up the lamps, the scene and the network, then starts the
+    HTTP server. loop() is three ticks: the WiFi state machine, one HTTP
+    request, and the scene simulation.
+
+    HttpServer serves the whole GUI: the single page from WebUI.gen.h, which
+    the Makefile bakes into the image from web/, and the JSON APIs owned by
+    LampWebApi, SceneWebApi, NetWebApi and SystemWebApi. NetManager owns the
+    network: credentials, the captive portal, mDNS, NTP and the timezone.
 
     WiFi on the Challenger NB RP2040 WiFi is an ESP8285 co-processor on a
     UART driven by AT commands, so WiFiEspAT is required. The arduino-pico
     core's own WiFi.h (lwIP over the Pico W's CYW43) does not work here.
 
-    Build with make at the repo root: it runs pioasm on i2c.pio before
-    arduino-cli, which the core does not do for sketch-local .pio files.
+    Build with make at the repo root: it runs buildweb.py on web/ and pioasm
+    on i2c.pio before arduino-cli, neither of which the core does for a
+    sketch.
 
     Libraries: ArduinoJson 7, WiFiEspAT. The Makefile sets the LittleFS
     size; building from the IDE instead, set one in the board menu.
@@ -20,32 +26,39 @@
 
 #include <WiFiEspAT.h>
 #include <LittleFS.h>
+#include "Version.h"
 #include "Lamps.h"
-#include "LampWebApi.h"
 #include "SceneEngine.h"
-#include "SceneWebApi.h"
-
-WiFiServer server(80);
+#include "NetConfig.h"
+#include "NetManager.h"
+#include "HttpServer.h"
 
 void setup() {
     Serial.begin(115200);
-
-    // ...WiFi bring-up for the product goes here...
-    server.begin();
-
-    // Local time for the real-time clock mode. Central European with DST.
-    setenv("TZ", "CET-1CEST,M3.5.0,M10.5.0/3", 1);
-    tzset();
-    // ...NTP sync goes here, so time(nullptr) is right before Scene runs...
+    delay(1500);                // give USB CDC a moment so the boot log is visible
+    Serial.printf("miniWorld lighting controller %s (%s)\n", MINIWORLD_VERSION, MINIWORLD_BUILD);
 
     Lamps.begin();              // applies whatever the GUI last saved
-    Serial.printf("%s, %u lamps\n",
-                  LampConfig::hardwareName(Lamps.config().hardware),
-                  Lamps.count());
+    Serial.printf("lamps: %u devices, %u lamps\n", Lamps.deviceCount(), Lamps.count());
 
-    if (!Scene.begin()) {
-        // Nothing stored yet: seed a town so there is something to look at.
-        SceneConfig s;
+    Scene.begin();              // /scene.json, or an empty scene if there is none
+
+    // Seed the example town when there is nothing to look at: no stored
+    // scene, or a stored scene whose groups hold no lamp at all, which is
+    // what a first boot with no hardware attached used to leave behind.
+    // Seeding needs lamps: with Lamps.count() at 0 every group would come
+    // out empty, and an empty scene would then be stored and never seeded
+    // again.
+    bool sceneEmpty = true;
+    for (uint8_t g = 0; g < Scene.config().groupCount; g++) {
+        if (Scene.config().groups[g].lampCount() > 0) {
+            sceneEmpty = false;
+            break;
+        }
+    }
+    if (Lamps.count() > 0 && sceneEmpty) {
+        // Static: a SceneConfig is about 4.8 kB, too much for the stack.
+        static SceneConfig s;
         auto group = [&](const char *name, Behaviour b, uint16_t from, uint16_t to) {
             GroupConfig &G = s.groups[s.groupCount++];
             G.setPreset(b);
@@ -59,77 +72,22 @@ void setup() {
         group("Pub and grill", Behaviour::Late,     120, 127);
         group("Kiosk, church", Behaviour::AllNight, 128, 143);
         Scene.apply(s, true);
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Minimal HTTP adaptor. Not a web server, just enough to route the lamp API
-// and serve the settings page from flash.
-// ---------------------------------------------------------------------------
-
-static void sendResponse(WiFiClient &c, int code, const char *type, const String &body) {
-    c.printf("HTTP/1.1 %d %s\r\nContent-Type: %s\r\nContent-Length: %u\r\nConnection: close\r\n\r\n",
-             code, code == 200 ? "OK" : "Error", type, (unsigned)body.length());
-    c.print(body);
-}
-
-static void serveRequest(WiFiClient &c) {
-    String line = c.readStringUntil('\n');
-    int sp1 = line.indexOf(' ');
-    int sp2 = line.indexOf(' ', sp1 + 1);
-    if (sp1 < 0 || sp2 < 0) {
-        return;
-    }
-    String method = line.substring(0, sp1);
-    String path = line.substring(sp1 + 1, sp2);
-
-    size_t contentLength = 0;
-    while (c.connected()) {
-        String h = c.readStringUntil('\n');
-        h.trim();
-        if (h.length() == 0) {
-            break;
-        }
-        if (h.startsWith("Content-Length:")) {
-            contentLength = h.substring(15).toInt();
-        }
+        Serial.println("scene: seeded example town");
     }
 
-    String body;
-    while (body.length() < contentLength && c.connected()) {
-        if (c.available()) {
-            body += (char)c.read();
-        }
-    }
-
-    if (LampWebApi::owns(path) || SceneWebApi::owns(path)) {
-        String out;
-        int code = LampWebApi::owns(path)
-                 ? LampWebApi::handle(method, path, body, out)
-                 : SceneWebApi::handle(method, path, body, out);
-        sendResponse(c, code, "application/json", out);
-        return;
-    }
-
-    if (path == "/" || path == "/lamps.html") {
-        File f = LittleFS.open("/lamps.html", "r");
-        if (f) {
-            String page = f.readString();
-            f.close();
-            sendResponse(c, 200, "text/html", page);
-            return;
-        }
-    }
-
-    sendResponse(c, 404, "text/plain", "not found");
+#ifdef MINIWORLD_ERASE_NET
+    // Bench escape hatch: a build made with DEFINES=-DMINIWORLD_ERASE_NET
+    // forgets the stored network so the compile-time defaults apply again.
+    // Flash a normal build afterwards, or every boot erases it.
+    NetConfigStore::erase();
+    Serial.println("net: stored network erased by MINIWORLD_ERASE_NET");
+#endif
+    Net.begin();                // ESP8285, stored credentials or the portal
+    Http.begin(80);
 }
 
 void loop() {
-    WiFiClient client = server.accept();
-    if (client) {
-        serveRequest(client);
-        client.stop();
-    }
-
+    Net.tick();                 // the WiFi state machine
+    Http.tick();                // at most one request, so the town keeps moving
     Scene.tick();               // the town goes about its evening
 }

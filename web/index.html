@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<!--
+    index.html - the shell of the miniWorld GUI: the header, the four view
+                 links and the containers app.js renders into. The CSS and
+                 JS markers below are where tools/buildweb.py inlines
+                 app.css, the view stylesheets, app.js and the view scripts,
+                 so the device serves one gzipped file and fetches nothing.
+
+    Invector Embedded Systems AB
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0b0f14">
+<title>miniWorld</title>
+<!-- CSS -->
+</head>
+<body>
+<button type="button" id="skip" class="skip">Skip to content</button>
+<header>
+    <h1 class="brand">
+        <span class="lamp-glyph" aria-hidden="true"></span>
+        <span class="brand-name">miniWorld</span>
+    </h1>
+    <nav id="nav" aria-label="Views">
+        <a href="#home" data-view="home">Home</a>
+        <a href="#wifi" data-view="wifi">WiFi</a>
+        <a href="#lamps" data-view="lamps">Lamps</a>
+        <a href="#scene" data-view="scene">Scene</a>
+    </nav>
+    <span id="offline" class="badge" role="status" hidden>no contact</span>
+</header>
+<main id="view" tabindex="-1"></main>
+<div id="toasts" role="status" aria-live="polite"></div>
+<!-- JS -->
+</body>
+</html>

@@ -22,10 +22,15 @@
     Status object:
 
       {
-        "hardware": "sx1503", "devices": 9, "lamps": 144,
+        "lamps": 144, "devices": 9,
         "intensity": false, "resolutionBits": 1,
+        "buses": [ { "sx1503": "ok", "al5887": ["ok", "fault"] }, ... 12 ... ],
         "faults": [false, false, true, ...]
       }
+
+    "sx1503" is "none" when that bus has no SX1503 fitted, "ok" or "fault"
+    otherwise. "al5887" has one entry per AL5887 fitted on that bus. "faults"
+    is per device in lamp order, as built by Lamps::build().
 
     Errors are {"error": "..."} with a 4xx code.
 

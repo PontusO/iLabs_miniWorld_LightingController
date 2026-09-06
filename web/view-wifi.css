@@ -1,0 +1,125 @@
+/*
+    view-wifi.css - the WiFi view: a tall single column that reads like a
+                    phone's own network picker, hairline rows, CSS signal
+                    bars, a lamp disc lit on the chosen network.
+
+    Invector Embedded Systems AB
+*/
+
+.view-wifi { max-width: 560px; margin: 0 auto; }
+/* .field and .state-result set a display, which beats the UA rule for
+   the hidden attribute, so say it again here. */
+.view-wifi [hidden] { display: none !important; }
+.view-wifi h2 { margin: 0; font-size: 1.05rem; font-weight: 600; }
+.view-wifi .head {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 8px; margin-bottom: 10px;
+}
+
+/* State: a headline on the ground, not a boxed card. */
+.view-wifi .card.state { background: none; border: 0; padding: 4px 2px 6px; }
+.view-wifi .state-head { display: flex; align-items: center; gap: 10px; }
+.view-wifi .state-title { font-size: 1.45rem; line-height: 1.2; font-weight: 600; }
+.view-wifi .state-sub { color: var(--muted); margin: 4px 0 10px; }
+.view-wifi .sub-line { display: block; }
+
+/* Shape says the state as well as colour: a lit disc online, a hollow
+   ring off the network, a ring with one amber arc while joining. */
+.view-wifi .state-mark {
+    flex: none; width: 13px; height: 13px;
+    border: 2px solid var(--muted); border-radius: 50%;
+}
+.view-wifi .state-mark.on {
+    background: var(--accent); border-color: var(--accent);
+    box-shadow: 0 0 8px 2px var(--glow);
+}
+.view-wifi .state-mark.wait, .view-wifi .spin {
+    border-color: var(--line); border-top-color: var(--accent);
+    animation: wifi-spin 0.9s linear infinite;
+}
+.view-wifi .spin {
+    flex: none; width: 16px; height: 16px; margin-top: 2px;
+    border: 2px solid var(--line); border-top-color: var(--accent);
+    border-radius: 50%;
+}
+
+.view-wifi .state-result {
+    display: flex; align-items: flex-start; gap: 10px; margin: 0 0 12px;
+    padding: 10px 12px; background: var(--card); border-radius: var(--radius);
+    border: 1px solid var(--line); border-left-width: 4px;
+}
+.view-wifi .state-result .glyph { flex: none; display: flex; }
+.view-wifi .state-result.ok { border-color: var(--ok); }
+.view-wifi .state-result.ok .glyph { color: var(--ok); }
+.view-wifi .state-result.failed { border-color: var(--fault); }
+.view-wifi .state-result.failed .glyph { color: var(--fault); }
+
+.view-wifi .dots i {
+    display: inline-block; width: 3px; height: 3px; margin-left: 3px;
+    border-radius: 50%; background: var(--accent); vertical-align: middle;
+    animation: wifi-dot 1.2s ease-in-out infinite;
+}
+.view-wifi .dots i:nth-child(2) { animation-delay: 0.2s; }
+.view-wifi .dots i:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes wifi-spin { to { transform: rotate(360deg); } }
+@keyframes wifi-dot { 0%, 100% { opacity: 0.25; } 40% { opacity: 1; } }
+
+/* The network list. */
+.view-wifi .net-list {
+    list-style: none; margin: 0; padding: 0; background: var(--bg);
+    border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden;
+}
+.view-wifi .net-list:empty { display: none; }
+.view-wifi .net-row {
+    display: flex; align-items: center; gap: 10px; width: 100%;
+    min-height: 48px; padding: 0 12px; background: none; border: 0;
+    border-bottom: 1px solid var(--line); border-radius: 0;
+    color: var(--text); font: inherit; text-align: left; cursor: pointer;
+}
+.view-wifi .net-list li:last-child .net-row { border-bottom: 0; }
+.view-wifi .net-row.picked {
+    background: rgba(244, 182, 66, 0.1); box-shadow: inset 3px 0 0 var(--accent);
+}
+.view-wifi .net-lamp {
+    flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--line);
+    transition: background var(--transition-fast), box-shadow var(--transition-fast);
+}
+.view-wifi .net-row.picked .net-lamp {
+    background: var(--accent); box-shadow: 0 0 6px 2px var(--glow);
+}
+.view-wifi .net-name {
+    flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+.view-wifi .net-row.picked .net-name { color: var(--glow); font-weight: 600; }
+.view-wifi .lock { flex: none; display: flex; color: var(--muted); }
+.view-wifi .net-row.picked .lock { color: var(--accent); }
+.view-wifi .net-empty { color: var(--muted); font-size: 0.9em; margin: 0; padding: 10px 2px; }
+
+.view-wifi .bars { flex: none; display: flex; align-items: flex-end; gap: 2px; height: 14px; }
+.view-wifi .bars i { display: block; width: 3px; border-radius: 1px; background: var(--line); }
+.view-wifi .bars i.on { background: var(--muted); }
+.view-wifi .net-row.picked .bars i.on { background: var(--accent); }
+.view-wifi .bars i:nth-child(1) { height: 5px; }
+.view-wifi .bars i:nth-child(2) { height: 8px; }
+.view-wifi .bars i:nth-child(3) { height: 11px; }
+.view-wifi .bars i:nth-child(4) { height: 14px; }
+
+/* Connect form, settings, forget. */
+.view-wifi .field { margin: 12px 0 0; }
+.view-wifi .hint { color: var(--muted); font-size: 0.85em; }
+.view-wifi #wifi-pick { color: var(--glow); font-weight: 600; }
+.view-wifi .other { margin-top: 4px; }
+.view-wifi .other summary { padding: 12px 0; color: var(--muted); cursor: pointer; }
+.view-wifi .pass-row { display: flex; gap: 8px; }
+.view-wifi .pass-row input { flex: 1; min-width: 0; }
+.view-wifi .btn.ghost {
+    background: none; border-color: var(--line); color: var(--muted); padding: 0 14px;
+}
+.view-wifi .btn.wide { width: 100%; margin-top: 14px; }
+.view-wifi .btn:disabled { opacity: 0.45; cursor: default; }
+.view-wifi .btn.danger { background: var(--fault); color: #200a04; font-weight: 600; }
+.view-wifi .btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.view-wifi .check { display: flex; align-items: center; gap: 10px; min-height: 44px; }
+.view-wifi .check input { width: 20px; height: 20px; accent-color: var(--accent); }
+.view-wifi .ask { margin: 0 0 10px; }

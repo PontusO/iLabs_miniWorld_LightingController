@@ -29,7 +29,13 @@ UART pins are used as an I2C bus.
 ## 2. Layering
 
 ```
-  miniWorld_LightingController.ino   application: NTP, HTTP server, Scene.tick()
+  miniWorld_LightingController.ino   application: Net.tick, Http.tick, Scene.tick
+  ───────────────────────────────────────────────────────────────
+  NetManager              WiFi state machine, portal AP, SNTP, mDNS
+  DnsResponder            portal DNS, one answer for every name asked
+  HttpServer              parsing, basic auth, routing, SPA from flash
+  NetWebApi               /api/net/*
+  SystemWebApi            /api/system/*
   ───────────────────────────────────────────────────────────────
   SceneEngine             clock modes, per-lamp habits, fades, flicker
   Scene / Sun             scene data model + JSON, solar calculation
@@ -52,7 +58,9 @@ UART pins are used as an I2C bus.
 The rule that made this work: everything above `Lamps` knows nothing
 about I2C, PIO, registers or buses. Everything below `LampDriver` knows
 nothing about lamps, scenes or time. `Lamps.cpp` is the only file that
-knows the pin map and the bus order.
+knows the pin map and the bus order. The network band names no lamp and
+no group either: `HttpServer` hands a path to whichever web API `owns()`
+it, and every web API stays a pure `(method, path, body)` function.
 
 ## 3. File inventory
 
@@ -62,18 +70,28 @@ knows the pin map and the bus order.
 | `BitBangWire.h/.cpp` | HardwareI2C bit-banged. Clock stretch, repeated start. | Compiles, untested |
 | `LampDriver.h/.cpp` | Driver interface + `SX1503LampDriver` | Register map from SX150x datasheet family, verify |
 | `AL5887LampDriver.h/.cpp` | AL5887 backend | **Register map unconfirmed**, see §6 |
-| `Lamps.h/.cpp` | Public API, runtime device construction, probe | Needs the per-bus rework, see §5 |
-| `LampConfig.h/.cpp` | Hardware config model, JSON, LittleFS | Needs the per-bus rework |
-| `LampWebApi.h/.cpp` | `/api/lamps/config, status, probe, test` | Follows LampConfig |
+| `Lamps.h/.cpp` | Public API, runtime device construction, probe | Per-bus rework done, untested on hardware |
+| `LampConfig.h/.cpp` | Hardware config model, JSON, LittleFS | Per-bus rework done, reviewed |
+| `LampWebApi.h/.cpp` | `/api/lamps/config, status, probe, test` | Per-bus status object done, checked against the mock |
 | `RgbLamps.h` | `setColor(module, r, g, b)` over Lamps | Done |
 | `Sun.h/.cpp` | Sunrise/sunset/civil twilight | **Verified** against Lund almanac |
 | `Scene.h/.cpp` | Groups, behaviours, clock, location, JSON | Done |
 | `SceneEngine.h/.cpp` | The simulation | Compiles, untested |
 | `SceneWebApi.h/.cpp` | `/api/scene/config, status, clock, presets` | Done |
-| `lamps.html` | Reference settings page for lamp hardware | Needs per-bus rework |
-| `miniWorld_LightingController.ino` | Application sketch: WiFi, HTTP adaptor, Scene.tick() | Compiles; WiFi and NTP bring-up still to write |
+| `NetConfig.h/.cpp` | `/net.json`: credentials, hostname, GUI password, NTP, TZ | Compiles, reviewed |
+| `NetDefaults.h` | Compile-time default network for a board with no `/net.json`; gitignored, copy `NetDefaults.example.h` | Done |
+| `NetManager.h/.cpp` | WiFi state machine, portal AP, SNTP, mDNS, global `Net` | Compiles, reviewed, not yet on a phone |
+| `DnsResponder.h/.cpp` | Portal DNS on port 53, one A record for any name | Compiles, reviewed, not yet on a phone |
+| `HttpServer.h/.cpp` | Parsing, basic auth, routing, the SPA from flash | Compiles, reviewed |
+| `NetWebApi.h/.cpp` | `/api/net/status, scan, config, connect, forget` | Compiles, checked against the mock |
+| `SystemWebApi.h/.cpp` | `/api/system/status, reboot` | Compiles, checked against the mock. The GUI reads `status` for the firmware line on Home; `reboot` has no button and is curl only. |
+| `Version.h` | `MINIWORLD_VERSION`, printed at boot and in the status | Done |
+| `web/` | SPA, four views, built into `WebUI.gen.h` | Done, reviewed at 320 px and 390 px |
+| `tools/` | `buildweb.py`, `mockserver.py`, `apicheck.sh` | Done |
+| `miniWorld_LightingController.ino` | Application sketch: Net.tick, Http.tick, Scene.tick | Compiles; portal bring-up on a phone still to do, see §5.5 |
 | `i2c.pio`, `pio_i2c.c/.h` | PIO I2C program and primitives, from pico-examples | Vendored, assert removed |
-| `Makefile` (repo root) | arduino-cli wrapper, runs pioasm when a .pio changes | Done |
+| `Makefile` (repo root) | arduino-cli wrapper: pioasm, buildweb.py, one explicit `./build` directory for compile and upload, `DEFINES=` passthrough | Done |
+| `tools/flash.sh`, `checkimage.sh`, `findboard.sh`, `console.sh` | Guarded flashing: image freshness, identity and size check; board found by USB id; banner verified after flashing | Done, findboard and checkimage exercised; flash end to end pending the bench |
 | `lamp-hardware-brief.md` | PCB design brief for carrier and AL5887 board | Needs the 4+6 connector patch, see §5 |
 
 `i2c.pio`, `pio_i2c.c` and `pio_i2c.h` are copied from
@@ -81,7 +99,8 @@ knows the pin map and the bus order.
 `assert(pin_scl == pin_sda + 1)` line removed from `i2c_program_init()`;
 the body uses full GPIO masks and does not need adjacency. `i2c.pio.h` is
 generated by `make` (see `Makefile` at the repo root) and is not a source
-file.
+file. `WebUI.gen.h` is generated the same way, by `make web` from `web/`;
+edit the sources under `web/`, never the header.
 
 Dependencies: ArduinoJson 7, LittleFS (in the core; a filesystem size
 must be set in the board menu or every save fails silently), and
@@ -115,7 +134,11 @@ it would reclaim GPIO16/17.
 
 ## 5. Work queue, in order
 
-### 5.1 Per-bus hardware configuration (decided, not yet done)
+### 5.1 Per-bus hardware configuration (done 2026-09-06)
+
+Firmware and GUI are done and compile. The one bullet still open below is
+the last one, the `lamp-hardware-brief.md` rewrite, which is a PCB
+document rather than firmware. The record of what was decided follows.
 
 The carrier gets a Bi2C-04 and a Bi2C-06 connector on every bus, with
 GPIO 1 of the 6-way repurposed as a 5 V output. AL5887 boards can
@@ -149,8 +172,9 @@ Changes:
   engine's per-lamp arrays. About 12 kB extra RAM total.
 - `LampWebApi::statusJson`: faults becomes per device in lamp order, plus
   a per-bus summary.
-- `lamps.html`: twelve rows, each with an SX1503 checkbox and an AL5887
-  count 0-4, plus the two global flags.
+- The Lamps view (`web/view-lamps.js`, which replaced `lamps.html`):
+  twelve rows, each with an SX1503 switch and an AL5887 count 0-4, plus
+  the global flags.
 - `lamp-hardware-brief.md`: replace "Bus connectors" and Board B
   connector sections with 4-way + 6-way per channel; 5 V on 6-way pin
   GPIO 1; 500 mA hold polyfuse per 6-way 5 V; remove separate 5 V power
@@ -158,14 +182,15 @@ Changes:
   now); AL5887 board takes 5 V from Bi2C-06 IN, no separate LED power
   connector.
 
-### 5.2 Scene scrubber page
+### 5.2 Scene scrubber page (done 2026-09-06)
 
-`scene.html`: time slider 00:00-23:59 driving `PUT /api/scene/clock`
-with `{"mode":"manual","time":...}`, mode buttons, day-of-year and speed
-controls, a dusk/dawn readout from `/api/scene/status`, and a group
-editor (name, behaviour, lamp ranges, overrides seeded from
-`/api/scene/presets`). Same constraints as `lamps.html`: served from
-flash, no external resources.
+Built as the Scene view of the SPA (`web/view-scene.js`), not as a
+separate `scene.html`: time slider 00:00-23:59 driving
+`PUT /api/scene/clock` with `{"mode":"manual","time":...}`, mode
+buttons, day-of-year and speed controls, a dusk/dawn readout from
+`/api/scene/status`, and a group editor (name, behaviour, lamp ranges,
+overrides seeded from `/api/scene/presets`). Served from flash, no
+external resources.
 
 ### 5.3 Hardware bring-up, in this order
 
@@ -189,6 +214,31 @@ flash, no external resources.
 - Group editor drag-to-assign, driven by the manual clock so the user
   sees which lamp is which.
 
+### 5.5 Portal bring-up on a phone
+
+Open. Numbered last so the existing numbers stay put, but it comes
+before 5.3 in practice: it needs only the board and a phone, no I2C
+hardware. Run the bench sequence in section 6 of
+`docs/superpowers/specs/2026-09-06-web-gui-captive-portal-design.md`, in
+its order, with these three first:
+
+1. Confirm the AT firmware's DHCP offers the AP as the name server:
+   `dig @192.168.4.1 example.com` from a joined phone or laptop. Without
+   it the portal never opens, whatever the rest of the code does.
+2. Join the AP from a phone with a device password set, and see whether
+   the sign-in sheet copes with basic auth. A captive-portal mini
+   browser that cannot show the 401 prompt would need the portal page
+   served unauthenticated.
+3. Check that `http: listening on port 80` is followed by a real accept,
+   and that three connections can be open at once (the CIPSERVER slot
+   count), rather than the log line being the only evidence.
+
+Then the rest: boot log at 921600 reaching Online or Portal, the phone
+joining `miniWorld-XXXX` and getting the sign-in sheet, onboarding to a
+real network, `http://miniworld.local/`, basic auth, and a reboot coming
+straight back Online. The two entries added to section 6 below are what
+that run confirms or refutes.
+
 ## 6. Things that were not verified and must be
 
 - **AL5887 register map.** Everything part-specific is in the define
@@ -205,6 +255,20 @@ flash, no external resources.
 - **BitBangWire timing** at 400 kHz, see 5.3 step 3.
 - **1 MHz on 20 cm FFC.** Plausible, not measured. Do not make it a
   default until it is.
+- **AT firmware DHCP offers the AP as DNS.** The captive portal only
+  works if the phone is told to ask 192.168.4.1 for names. ESP-IDF's
+  DHCP server does that by default and the AT firmware is not known to
+  change it, but nobody has watched a lease. If it turns out not to,
+  `DnsResponder` never gets a query and the sign-in sheet never opens.
+  Test: `dig @192.168.4.1 example.com` from a joined phone or laptop,
+  see §5.5.
+- **921600 baud on the ESP link.** `NetManager::bringUpModule()` raises
+  Serial2 from 115200 with `AT+UART_CUR` after `WiFi.init()`, then
+  re-opens the port and checks the module still answers, falling back to
+  115200 and logging `net: esp stays at 115200` if it does not. The rate
+  is what makes the 20 kB page arrive in well under a second, but the
+  link has never actually run at it here. Watch the boot log for
+  `net: esp link 921600` and for garbled AT traffic under load.
 
 ## 7. Conventions
 
@@ -219,6 +283,8 @@ flash, no external resources.
 - Web API handlers are server-agnostic: `(method, path, body) → (code,
   json)`. Do not couple them to a specific server class.
 - Anything served from the device: no web fonts, no CDN, no framework.
+- Web UI: sources in `web/`, one view per file, built by `make`, never
+  edit `WebUI.gen.h`.
 - Config that the GUI edits is applied at runtime and persisted; nothing
   hardware-related is a compile-time switch.
 

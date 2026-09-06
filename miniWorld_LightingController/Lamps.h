@@ -26,8 +26,8 @@
 
 class LampDriver;
 
-#define LAMPS_MAX_DEVICES 12
-#define LAMPS_MAX_LAMPS   512
+#define LAMPS_MAX_DEVICES 60
+#define LAMPS_MAX_LAMPS   2048
 
 class LampController {
 public:
@@ -48,10 +48,10 @@ public:
     // Currently applied configuration.
     const LampConfig &config() const { return _cfg; }
 
-    // Look for hardware. Tries AL5887 at 0x30..0x33 on the primary bus, then
-    // SX1503 at 0x20 on every bus in order. Returns what it found; does not
-    // apply it. Stops the running configuration while it looks, then
-    // restores it.
+    // Look for hardware on every bus: SX1503 at 0x20, then AL5887 at
+    // 0x30..0x33 stopping at the first address that does not answer.
+    // Returns what it found; does not apply it. Stops the running
+    // configuration while it looks, then restores it.
     LampConfig probe();
 
     // --- status ----------------------------------------------------------
@@ -62,6 +62,11 @@ public:
     bool intensitySupported() const;
     uint8_t resolutionBits(uint16_t lamp) const;
     bool faulted(uint16_t lamp) const;
+
+    // Per-bus status, for the GUI's bus summary. bus is 0..LAMPS_NUM_BUSES-1.
+    uint8_t busDeviceCount(uint8_t bus) const;      // devices built on that bus
+    bool busSx1503Faulted(uint8_t bus) const;       // false when none fitted
+    bool busAl5887Faulted(uint8_t bus, uint8_t n) const;  // n-th al5887 on that bus
 
     // --- lamps -----------------------------------------------------------
 
@@ -88,6 +93,7 @@ private:
 
     LampConfig _cfg;
     LampDriver *_dev[LAMPS_MAX_DEVICES] = { nullptr };
+    uint8_t _devBus[LAMPS_MAX_DEVICES] = { 0 };   // which bus built _dev[i]
     uint8_t _numDev = 0;
     uint16_t _count = 0;
     bool _autoShow = false;

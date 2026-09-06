@@ -3,9 +3,9 @@
 
     Everything in this file is private to the lamp subsystem. The pin map and
     the bus order live here and nowhere else. Which hardware is fitted, and
-    how many devices, comes from LampConfig at runtime.
+    on which bus, comes from LampConfig at runtime.
 
-    Bus order for SX1503 (one device per bus, address 0x20):
+    Bus order, GPIO pair and transport (LAMPS_NUM_BUSES = 12):
         0  Wire   GPIO0/1     (SDA/SCL)
         1  Wire1  GPIO26/27   (A0/A1)
         2  PIO    GPIO2/3     (D5/D6)
@@ -19,8 +19,10 @@
         10 soft   GPIO20/21   (D17/A5)
         11 soft   GPIO28/29   (A2/A3)
 
-    A device count of N uses the first N buses. AL5887 uses only bus 0, with
-    devices at 0x30, 0x31, 0x32, 0x33.
+    Any bus may carry one SX1503 (address 0x20) and up to
+    LAMPS_MAX_AL5887_PER_BUS AL5887 (addresses 0x30, 0x31, 0x32, 0x33), in any
+    combination. Lamp numbering is bus order, then SX1503 before AL5887 on
+    that bus, then AL5887 in address order, then channel.
 
     Invector Embedded Systems AB
 */
@@ -59,6 +61,8 @@ static BitBangWire softBus[] = {
 static const uint8_t NUM_PIO = sizeof(pioBus) / sizeof(pioBus[0]);
 static const uint8_t NUM_SOFT = sizeof(softBus) / sizeof(softBus[0]);
 static const uint8_t NUM_BUSES = 2 + NUM_PIO + NUM_SOFT;
+
+static_assert(NUM_BUSES == LAMPS_NUM_BUSES, "physical bus count must match LampConfig's bus count");
 
 static bool busStarted[NUM_BUSES] = { false };
 
@@ -153,36 +157,36 @@ bool LampController::build(const LampConfig &cfg) {
 
     bool ok = true;
 
-    switch (cfg.hardware) {
-
-        case LampHardware::AL5887: {
-            startBus(0, cfg.busSpeed);
-            for (uint8_t i = 0; i < cfg.devices; i++) {
-                AL5887LampDriver *d = new AL5887LampDriver(
-                    *busAt(0), (uint8_t)(AL5887_BASE_ADDRESS + i));
-                if (!d->begin()) {
-                    ok = false;
-                }
-                _dev[_numDev++] = d;
-            }
-            break;
+    for (uint8_t b = 0; b < LAMPS_NUM_BUSES; b++) {
+        const BusConfig &bc = cfg.buses[b];
+        if (!bc.sx1503 && bc.al5887 == 0) {
+            continue;
         }
 
-        case LampHardware::SX1503: {
-            for (uint8_t i = 0; i < cfg.devices && i < NUM_BUSES; i++) {
-                startBus(i, cfg.busSpeed);
-                SX1503LampDriver *d = new SX1503LampDriver(*busAt(i));
-                d->setActiveLow(cfg.activeLow);
-                if (!d->begin()) {
-                    ok = false;
-                }
-                _dev[_numDev++] = d;
+        startBus(b, cfg.busSpeed);
+        arduino::HardwareI2C *bus = busAt(b);
+
+        if (bc.sx1503 && _numDev < LAMPS_MAX_DEVICES) {
+            SX1503LampDriver *d = new SX1503LampDriver(*bus);
+            d->setActiveLow(cfg.activeLow);
+            if (!d->begin()) {
+                ok = false;
             }
-            break;
+            _dev[_numDev] = d;
+            _devBus[_numDev] = b;
+            _numDev++;
         }
 
-        default:
-            break;
+        for (uint8_t n = 0; n < bc.al5887 && _numDev < LAMPS_MAX_DEVICES; n++) {
+            AL5887LampDriver *d = new AL5887LampDriver(
+                *bus, (uint8_t)(AL5887_BASE_ADDRESS + n));
+            if (!d->begin()) {
+                ok = false;
+            }
+            _dev[_numDev] = d;
+            _devBus[_numDev] = b;
+            _numDev++;
+        }
     }
 
     for (uint8_t i = 0; i < _numDev; i++) {
@@ -219,46 +223,30 @@ LampConfig LampController::probe() {
     teardown();
 
     LampConfig found;
-    found.busSpeed = 100000;        // be gentle while sniffing
+    uint32_t probeSpeed = 100000;        // be gentle while sniffing
 
-    // AL5887 first: consecutive addresses from 0x30 on the primary bus.
-    startBus(0, found.busSpeed);
-    uint8_t n = 0;
-    for (uint8_t i = 0; i < 4; i++) {
-        if (ping(busAt(0), (uint8_t)(AL5887_BASE_ADDRESS + i))) {
-            n++;
-        } else {
-            break;
-        }
-    }
-    if (n > 0) {
-        found.hardware = LampHardware::AL5887;
-        found.devices = n;
-    } else {
-        // SX1503: count consecutive buses that answer at 0x20, in bus order.
-        n = 0;
-        for (uint8_t i = 0; i < NUM_BUSES; i++) {
-            startBus(i, found.busSpeed);
-            if (ping(busAt(i), SX1503_I2C_ADDRESS)) {
+    for (uint8_t b = 0; b < LAMPS_NUM_BUSES; b++) {
+        startBus(b, probeSpeed);
+        arduino::HardwareI2C *bus = busAt(b);
+
+        found.buses[b].sx1503 = ping(bus, SX1503_I2C_ADDRESS);
+
+        uint8_t n = 0;
+        for (uint8_t a = 0; a < LAMPS_MAX_AL5887_PER_BUS; a++) {
+            if (ping(bus, (uint8_t)(AL5887_BASE_ADDRESS + a))) {
                 n++;
             } else {
                 break;
             }
         }
-        if (n > 0) {
-            found.hardware = LampHardware::SX1503;
-            found.devices = n;
-        }
-    }
+        found.buses[b].al5887 = n;
 
-    for (uint8_t i = 0; i < NUM_BUSES; i++) {
-        stopBus(i);
+        stopBus(b);
     }
 
     found.busSpeed = running.busSpeed;
     found.activeLow = running.activeLow;
     found.rgb = running.rgb;
-    found.clamp();
 
     if (wasBuilt) {
         build(running);
@@ -275,6 +263,51 @@ bool LampController::deviceFaulted(uint8_t device) const {
         return true;
     }
     return _dev[device]->faulted();
+}
+
+uint8_t LampController::busDeviceCount(uint8_t bus) const {
+    uint8_t n = 0;
+    for (uint8_t i = 0; i < _numDev; i++) {
+        if (_devBus[i] == bus) {
+            n++;
+        }
+    }
+    return n;
+}
+
+bool LampController::busSx1503Faulted(uint8_t bus) const {
+    if (bus >= LAMPS_NUM_BUSES || !_cfg.buses[bus].sx1503) {
+        return false;
+    }
+    // SX1503 is always built first on a bus, see Lamps::build().
+    for (uint8_t i = 0; i < _numDev; i++) {
+        if (_devBus[i] == bus) {
+            return _dev[i]->faulted();
+        }
+    }
+    return false;
+}
+
+bool LampController::busAl5887Faulted(uint8_t bus, uint8_t n) const {
+    if (bus >= LAMPS_NUM_BUSES || n >= _cfg.buses[bus].al5887) {
+        return true;
+    }
+    bool sawSx1503 = false;
+    uint8_t seen = 0;
+    for (uint8_t i = 0; i < _numDev; i++) {
+        if (_devBus[i] != bus) {
+            continue;
+        }
+        if (_cfg.buses[bus].sx1503 && !sawSx1503) {
+            sawSx1503 = true;   // this device on the bus is the SX1503
+            continue;
+        }
+        if (seen == n) {
+            return _dev[i]->faulted();
+        }
+        seen++;
+    }
+    return true;
 }
 
 bool LampController::intensitySupported() const {

@@ -1,0 +1,113 @@
+/*
+    view-lamps.css - the bus plate is the memorable piece: twelve hairline
+    rows on a recessed panel, bus number and GPIO pair on the left, switch
+    and stepper in fixed columns, an amber edge on the buses that carry
+    something.
+
+    Invector Embedded Systems AB
+*/
+
+.view-lamps h2 { font-size: 1.05rem; font-weight: 600; margin-bottom: 2px; }
+.view-lamps .sum, .view-lamps .hint, .view-lamps .after {
+    color: var(--muted); font-size: 0.82rem; margin: 0 0 10px 0;
+}
+.view-lamps .after:empty, .view-lamps .diff:empty { margin: 0; }
+/* .btn sets a display, which would otherwise beat the hidden attribute. */
+.view-lamps .btn[hidden] { display: none; }
+/* A button holds itself disabled while its request is in flight. */
+.view-lamps .btn:disabled { opacity: 0.5; cursor: default; }
+
+/* the bus plate */
+.view-lamps .plate {
+    background: #0f151c; border: 1px solid var(--line);
+    border-radius: 8px; overflow: hidden;
+}
+.view-lamps .bus-row {
+    display: grid; grid-template-columns: 64px 1fr 44px 112px;
+    align-items: center; column-gap: 8px; row-gap: 2px;
+    padding: 5px 10px; border-top: 1px solid var(--line);
+    border-left: 3px solid transparent;
+}
+.view-lamps .bus-row.head {
+    border-top: 0; background: #0d131a; color: var(--muted); font-size: 0.72rem;
+}
+.view-lamps .head .c-step { text-align: center; }
+.view-lamps .bus-row.fitted {
+    border-left-color: var(--accent); background: rgba(244, 182, 66, 0.045);
+}
+.view-lamps .c-id { grid-column: 1; grid-row: 1; }
+.view-lamps .c-sw { grid-column: 3; grid-row: 1; }
+.view-lamps .c-step { grid-column: 4; grid-row: 1; }
+.view-lamps .c-stat { grid-column: 1 / -1; grid-row: 2; }
+.view-lamps .head .c-stat, .view-lamps .stat:empty { display: none; }
+@media (min-width: 560px) {
+    .view-lamps .c-stat { grid-column: 2; grid-row: 1; }
+    .view-lamps .head .c-stat { display: block; }
+}
+.view-lamps .id {
+    display: flex; flex-direction: column; line-height: 1.15;
+}
+.view-lamps .id .n { font-size: 0.95rem; }
+.view-lamps .id .gp { font-size: 0.7rem; color: var(--muted); }
+
+/* stepper */
+.view-lamps .stepper {
+    display: flex; align-items: center; background: var(--bg);
+    border: 1px solid var(--line); border-radius: 8px;
+}
+.view-lamps .stepper button {
+    width: 44px; height: 44px; padding: 0; background: none; border: 0;
+    border-radius: 8px; color: var(--text); font: inherit; font-size: 1.25rem;
+    line-height: 1; cursor: pointer;
+}
+.view-lamps .stepper button:disabled { color: var(--line); cursor: default; }
+.view-lamps .stepper .val { min-width: 20px; text-align: center; font-size: 0.95rem; }
+
+/* device marks */
+.view-lamps .stat {
+    display: flex; flex-wrap: wrap; gap: 4px 10px; padding: 2px 0 3px 0;
+    font-size: 0.72rem; color: var(--muted);
+}
+.view-lamps .pip { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.view-lamps .pip .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
+.view-lamps .pip.fault .dot {
+    border-radius: 1px; transform: rotate(45deg); background: var(--fault);
+}
+.view-lamps .pip .w { color: var(--ok); }
+.view-lamps .pip.fault .w { color: var(--fault); }
+
+/* save */
+.view-lamps .save { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+.view-lamps .mark {
+    padding: 3px 10px; border: 1px solid var(--accent); border-radius: 999px;
+    color: var(--accent); font-size: 0.78rem; font-variant-numeric: tabular-nums;
+}
+
+/* probe diff */
+.view-lamps .diff { margin-top: 12px; }
+.view-lamps .line {
+    margin: 0 0 8px 0; padding-left: 10px; border-left: 2px solid var(--line);
+    font-size: 0.88rem;
+}
+.view-lamps .line.match { color: var(--ok); border-left-color: var(--ok); }
+.view-lamps .txt { display: block; }
+.view-lamps .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.view-lamps .tag { padding: 2px 8px; border-radius: 4px; border: 1px solid; font-size: 0.72rem; }
+.view-lamps .tag.found { border-color: var(--accent); color: var(--accent); }
+.view-lamps .tag.gone { border-color: var(--fault); color: var(--fault); }
+
+/* test */
+.view-lamps .lvl { display: flex; align-items: baseline; justify-content: space-between; }
+.view-lamps .lvl label, .view-lamps .one label { color: var(--muted); font-size: 0.9em; }
+.view-lamps .out { font-size: 1.1rem; }
+.view-lamps .level {
+    width: 100%; height: 44px; margin: 0; accent-color: var(--accent);
+    background: transparent;
+}
+.view-lamps .one { display: flex; align-items: center; gap: 8px; margin: 4px 0 10px 0; }
+.view-lamps .one input {
+    width: 90px; min-height: 44px; padding: 8px 10px; background: var(--bg);
+    border: 1px solid var(--line); border-radius: 6px; color: var(--text);
+    font: inherit; font-variant-numeric: tabular-nums;
+}
+.view-lamps .one .btn { margin-left: auto; }

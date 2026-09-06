@@ -50,7 +50,10 @@ int SceneWebApi::getConfig(String &body) {
 }
 
 int SceneWebApi::putConfig(const String &in, String &body) {
-    SceneConfig cfg = Scene.config();
+    // Static: a SceneConfig is about 4.8 kB and the core-0 stack is far
+    // smaller. One request is served at a time, so this never nests.
+    static SceneConfig cfg;
+    cfg = Scene.config();
     String why;
     if (!cfg.fromJson(in, &why)) {
         return error(400, why.c_str(), body);
@@ -124,7 +127,9 @@ int SceneWebApi::putClock(const String &in, String &body) {
 int SceneWebApi::getPresets(String &body) {
     JsonDocument doc;
     for (uint8_t i = 1; i < (uint8_t)Behaviour::COUNT; i++) {
-        GroupConfig G;
+        // Static: a GroupConfig carries the 256 byte lamp bitmap, and
+        // setPreset() fills in every field this loop reads.
+        static GroupConfig G;
         G.setPreset((Behaviour)i);
         JsonObject o = doc[SceneConfig::behaviourName((Behaviour)i)].to<JsonObject>();
         o["onAnchor"] = SceneConfig::anchorName(G.onAnchor);
@@ -167,5 +172,5 @@ int SceneWebApi::handle(const String &method, const String &path,
         if (method == "GET") return getPresets(body);
         return error(405, "method not allowed", body);
     }
-    return 404;
+    return error(404, "not found", body);
 }

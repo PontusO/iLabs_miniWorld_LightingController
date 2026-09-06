@@ -21,9 +21,15 @@ SceneEngine Scene;
 // ---------------------------------------------------------------------------
 
 bool SceneEngine::begin() {
-    SceneConfig cfg;
+    // Static: a SceneConfig is about 4.8 kB and the core-0 stack is far
+    // smaller. The sketch is single-threaded and begin() runs once, from
+    // setup(), so this never nests with itself.
+    static SceneConfig cfg;
     bool had = SceneStore::load(cfg);
-    apply(had ? cfg : SceneConfig(), false);
+    // One call rather than a ternary with SceneConfig(): the temporary would
+    // put another 4.8 kB on the stack. load() leaves cfg at its defaults when
+    // there is nothing stored or the file does not parse.
+    apply(cfg, false);
     return had;
 }
 
