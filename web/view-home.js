@@ -1,6 +1,7 @@
 // view-home.js - Home view: the town clock, the twelve I2C buses as tiles,
-//                the network line and the scene switch. mount() builds the
-//                DOM once, poll() only writes text and classes.
+//                the households strip, the network line and the scene
+//                switch. mount() builds the DOM once, poll() only writes
+//                text and classes.
 //
 // Invector Embedded Systems AB
 
@@ -12,6 +13,12 @@
     var instance = null; // the current mount, so a late reply can be dropped
     var writing = false; // a clock PUT is in flight, leave the switch alone
     var r = null;        // element references, built by mount()
+
+    var STATES = ["awake", "asleep", "out", "away"];
+    var ROOM_WORDS = {
+        l: "living room", k: "kitchen", b: "bedroom",
+        t: "bathroom", h: "hall", o: "other room"
+    };
 
     var NET_MODES = {
         online: "online", connecting: "connecting",
@@ -65,11 +72,16 @@
             onchange: function () { sendEnabled(input.checked); }
         });
 
+        var hhList = el("div", { class: "hh-list" });
+        var hh = el("section", { class: "card", hidden: true },
+            el("h2", null, "Households"), hhList);
+
         root.appendChild(el("div", { class: "view-home" },
             el("section", { class: "card clock" },
                 el("div", { class: "clock-face" }, time, lamp), caption, count),
             el("section", { class: "card" },
                 el("h2", null, "Buses", devices), grid),
+            hh,
             el("div", { class: "cols" },
                 el("section", { class: "card net" },
                     el("h2", null, "Network"), mode.node, name.node, ip.node,
@@ -86,7 +98,8 @@
 
         r = {
             time: time, lamp: lamp, caption: caption, count: count, tiles: tiles,
-            devices: devices, mode: mode.value, name: name.value,
+            devices: devices, hh: hh, hhList: hhList, hhKey: null, chips: [],
+            mode: mode.value, name: name.value,
             nameLabel: name.name, ip: ip.value, sys: sys.value,
             sysRow: sys.node, warn: warn, input: input
         };
@@ -164,6 +177,57 @@
         if (!writing && r.input.checked !== !!s.enabled) r.input.checked = !!s.enabled;
     }
 
+    // One chip per flat: the name, a shape for the state and the rooms
+    // that are lit. The state word is there for a screen reader, since the
+    // shape alone would say it to nobody else.
+    function buildChips(flats) {
+        r.hhList.innerHTML = "";
+        r.chips = flats.map(function (f) {
+            var glyph = el("span", { class: "st", "aria-hidden": "true" });
+            var word = el("span", { class: "sr" }, "");
+            var lit = el("span", { class: "hh-lit", "aria-hidden": "true" });
+            r.hhList.appendChild(el("div", { class: "hh-chip" },
+                el("span", { class: "hh-name" }, f.name || "Unnamed flat"),
+                glyph, word, lit));
+            return { glyph: glyph, word: word, lit: lit, letters: null };
+        });
+    }
+
+    function showFlats(flats) {
+        var list = flats || [];
+        r.hh.hidden = list.length === 0;
+        if (!list.length) return;
+        var key = list.map(function (f) { return f.name; }).join("\u0000");
+        if (r.hhKey !== key) {
+            r.hhKey = key;
+            buildChips(list);
+        }
+        list.forEach(function (f, i) {
+            var c = r.chips[i];
+            var state = STATES.indexOf(f.state) >= 0 ? f.state : "";
+            setClass(c.glyph, "st " + state);
+            var letters = String(f.lit || "");
+            var words = [];
+            for (var w = 0; w < letters.length; w++) {
+                words.push(ROOM_WORDS[letters.charAt(w)] || "room");
+            }
+            // The glyph and the discs are shapes, so the state and the lit
+            // rooms go into one line a reader can say.
+            setText(c.word, (state || "no reading")
+                + (words.length ? ", lit: " + words.join(", ") : ", no room lit"));
+            if (c.letters === letters) return;
+            c.letters = letters;
+            c.lit.innerHTML = "";
+            if (!letters) {
+                c.lit.appendChild(el("span", { class: "hh-dark" }, "dark"));
+                return;
+            }
+            for (var k = 0; k < letters.length; k++) {
+                c.lit.appendChild(el("span", { class: "rd on" }, letters.charAt(k)));
+            }
+        });
+    }
+
     function showLamps(l) {
         var buses = l.buses || [];
         var n = l.devices || 0;
@@ -210,7 +274,10 @@
             App.api("GET", "/api/net/status")
         ]).then(function (res) {
             if (mine !== instance || !r) return;
-            if (res[0]) showScene(res[0]);
+            if (res[0]) {
+                showScene(res[0]);
+                showFlats(res[0].flats);
+            }
             if (res[1]) showLamps(res[1]);
             if (res[2]) showNet(res[2]);
         }, function () {

@@ -34,15 +34,21 @@ document for the whole project and the place to start reading.
   the sign-in sheet on the WiFi page, where you pick a network and enter
   its password. The same access point serves the full GUI at exhibitions
   with no router.
-- **Web GUI**, one page with four views: Home (town time, dusk and dawn,
+- **Web GUI**, one page with five views: Home (town time, dusk and dawn,
   lit lamps, bus health, network), WiFi (portal page and device
-  settings), Lamps (what is fitted on each bus, probe, test) and Scene
-  (clock mode, a horizon scrubber for the time of day, the group editor).
+  settings), Lamps (what is fitted on each bus, probe, test), Scene
+  (clock mode, a horizon scrubber for the time of day, the group editor)
+  and Houses (households, their rooms, and the rhythm editor).
   Dark, phone first, nothing fetched from outside the board.
 - **Scene engine.** Lamps belong to groups with a behaviour: street, home,
   shop, late, all night. Every lamp gets a stable personal habit derived
   from its index and a seed, so the town looks like the same people living
   there evening after evening, with a little daily jitter.
+- **Households.** A flat is a named household (Andersson, Storgatan 3)
+  with one daily rhythm and a handful of rooms that light in order:
+  kitchen for the coffee, hall on the way out, living room in the
+  evening, bedroom last. Seen in the Houses tab and as chips on the
+  Home strip.
 - **JSON API** under `/api/lamps`, `/api/scene`, `/api/net` and
   `/api/system`, with optional HTTP basic auth behind one device password.
   SNTP and mDNS (`miniworld.local`) through the AT firmware.

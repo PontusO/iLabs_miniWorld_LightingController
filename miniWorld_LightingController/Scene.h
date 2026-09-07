@@ -25,6 +25,21 @@
             "nightActivity": 0..3,     wake-ups through the night
             ...optional overrides, see GroupConfig...
           }
+        ],
+        "flats": [
+          { "name": "Andersson",
+            "building": "Storgatan 3",  GUI grouping only, may be empty
+            "type": "family" | "elderly" | "nightowl" | "away" | "custom",
+            "weekend": true,            weekend rhythm on Saturday and Sunday
+            "rooms": [ { "lamp": 4, "role": "kitchen" } ],
+            "wake":  [390, 435],        the household's daily rhythm, minutes
+            "leave": [450, 495],        a negative from means "never leaves"
+            "home":  [960, 1050],
+            "bed":   [1350, 1410],      may exceed 1440
+            "outPercent": 14,           evenings out
+            "tvPercent": 70,            evenings with television
+            "level": 210, "fadeMs": 300,
+            "dayActivity": 3, "nightActivity": 1 }
         ]
       }
 
@@ -40,6 +55,14 @@
     behaviour's preset gives, so a scene written before the layer existed
     loads with the life its buildings would have had.
 
+    A flat is a household: a name, one daily rhythm and a handful of rooms
+    that light in the natural order. Groups stay for everything that is not
+    a household. A lamp listed in a flat is owned by the flat and groups no
+    longer drive it; the first flat listing a lamp wins. Like a group, a
+    flat is built from setPreset(type) and every field is then editable, so
+    the type is a starting point and not a lock. A scene file without
+    "flats" loads exactly as it did before flats existed.
+
     Invector Embedded Systems AB
 */
 
@@ -50,6 +73,8 @@
 
 #define SCENE_MAX_GROUPS   16
 #define SCENE_NAME_LEN     24
+#define SCENE_MAX_FLATS    32
+#define FLAT_MAX_ROOMS     12
 
 enum class Behaviour : uint8_t {
     Off = 0,        // never lit
@@ -98,6 +123,62 @@ struct GroupConfig {
     uint16_t lampCount() const;
 };
 
+// A household. Custom is "keep whatever is set": its preset is the family
+// one, and nothing re-seeds it afterwards.
+enum class Household : uint8_t {
+    Family = 0,
+    Elderly,
+    NightOwl,
+    Away,
+    Custom,
+    COUNT
+};
+
+// The rooms a flat can have. This order, not the flat's own room list, is
+// the order of the letters in the status "lit" string, and it is the order
+// of the rate table in the engine.
+enum class Room : uint8_t {
+    Living = 0,
+    Kitchen,
+    Bedroom,
+    Bathroom,
+    Hall,
+    Other,
+    COUNT
+};
+
+struct RoomConfig {
+    uint16_t lamp;
+    Room role;
+};
+
+struct FlatConfig {
+    char name[SCENE_NAME_LEN];          // "Andersson"
+    char building[SCENE_NAME_LEN];      // "Storgatan 3", GUI grouping only
+    Household type;
+    bool weekend;                       // weekend rhythm on Saturday and Sunday
+    uint8_t roomCount;
+    RoomConfig rooms[FLAT_MAX_ROOMS];
+
+    // The rhythm, minutes since midnight; a range is [from, to] and the day
+    // draws one moment inside it. leaveFrom below zero means the household
+    // never leaves. Filled by setPreset(type) and editable afterwards.
+    int16_t wakeFrom, wakeTo;
+    int16_t leaveFrom, leaveTo;
+    int16_t homeFrom, homeTo;
+    int16_t bedFrom, bedTo;             // may exceed 1440
+
+    uint8_t outPercent;                 // evenings out, 0..100
+    uint8_t tvPercent;                  // evenings with television, 0..100
+    uint8_t level;                      // brightness when lit, 0..255
+    uint16_t fadeMs;                    // real-time fade, 0 = instant
+
+    uint8_t dayActivity;                // 0..3, same meaning as a group's
+    uint8_t nightActivity;
+
+    void setPreset(Household t);
+};
+
 enum class ClockMode : uint8_t {
     Real = 0,
     Accelerated,
@@ -121,6 +202,9 @@ struct SceneConfig {
     uint8_t groupCount = 0;
     GroupConfig groups[SCENE_MAX_GROUPS];
 
+    uint8_t flatCount = 0;
+    FlatConfig flats[SCENE_MAX_FLATS];
+
     void clamp();
     void toJson(String &out) const;
     bool fromJson(const String &in, String *error = nullptr);
@@ -131,6 +215,10 @@ struct SceneConfig {
     static bool parseAnchor(const char *s, Anchor &out);
     static const char *modeName(ClockMode m);
     static bool parseMode(const char *s, ClockMode &out);
+    static const char *householdName(Household t);
+    static bool parseHousehold(const char *s, Household &out);
+    static const char *roomName(Room r);
+    static bool parseRoom(const char *s, Room &out);
 
     // "19:40" or "1180" to minutes; returns false on nonsense.
     static bool parseTime(const char *s, uint16_t &minutes);

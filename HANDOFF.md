@@ -33,11 +33,11 @@ UART pins are used as an I2C bus.
   ───────────────────────────────────────────────────────────────
   NetManager              WiFi state machine, portal AP, SNTP, mDNS
   DnsResponder            portal DNS, one answer for every name asked
-  HttpServer              parsing, basic auth, routing, SPA from flash
+  HttpServer              parsing, basic auth, routing, SPA from flash (Home, WiFi, Lamps, Scene, Houses)
   NetWebApi               /api/net/*
   SystemWebApi            /api/system/*
   ───────────────────────────────────────────────────────────────
-  SceneEngine             clock modes, habits, fades, flicker, events (day lights, dips, night wake-ups)
+  SceneEngine             clock modes, habits, fades, flicker, events (day lights, dips, night wake-ups), flats (households with rooms)
   Scene / Sun             scene data model + JSON, solar calculation
   SceneWebApi             /api/scene/*
   ───────────────────────────────────────────────────────────────
@@ -75,8 +75,8 @@ it, and every web API stays a pure `(method, path, body)` function.
 | `LampWebApi.h/.cpp` | `/api/lamps/config, status, probe, test` | Per-bus status object done, checked against the mock |
 | `RgbLamps.h` | `setColor(module, r, g, b)` over Lamps | Done |
 | `Sun.h/.cpp` | Sunrise/sunset/civil twilight | **Verified** against Lund almanac |
-| `Scene.h/.cpp` | Groups, behaviours (incl. the four household presets), clock, location, JSON | Done |
-| `SceneEngine.h/.cpp` | The simulation, plus the event layer (day lights, dips, night wake-ups) | Compiles, reviewed, not yet run on hardware |
+| `Scene.h/.cpp` | Groups, behaviours (incl. the four household presets), flats (households with rooms), clock, location, JSON | Compiles, reviewed, not yet run on hardware |
+| `SceneEngine.h/.cpp` | The simulation, plus the event layer (day lights, dips, night wake-ups) and `evaluateFlats()` for the flats' rooms | Compiles, reviewed, not yet run on hardware |
 | `SceneWebApi.h/.cpp` | `/api/scene/config, status, clock, presets` | Done |
 | `NetConfig.h/.cpp` | `/net.json`: credentials, hostname, GUI password, NTP, TZ | Compiles, reviewed |
 | `NetDefaults.h` | Compile-time default network for a board with no `/net.json`; gitignored, copy `NetDefaults.example.h` | Done |
@@ -86,7 +86,8 @@ it, and every web API stays a pure `(method, path, body)` function.
 | `NetWebApi.h/.cpp` | `/api/net/status, scan, config, connect, forget` | Compiles, checked against the mock |
 | `SystemWebApi.h/.cpp` | `/api/system/status, reboot` | Compiles, checked against the mock. The GUI reads `status` for the firmware line on Home; `reboot` has no button and is curl only. |
 | `Version.h` | `MINIWORLD_VERSION`, printed at boot and in the status | Done |
-| `web/` | SPA, four views, built into `WebUI.gen.h` | Done, reviewed at 320 px and 390 px |
+| `web/` | SPA, five views, built into `WebUI.gen.h` | Done, reviewed at 320 px and 390 px |
+| `web/view-houses.js/.css` | Houses view: households by building, room states, the rhythm editor | Compiles, reviewed, not yet run on hardware |
 | `tools/` | `buildweb.py`, `mockserver.py`, `apicheck.sh` | Done |
 | `miniWorld_LightingController.ino` | Application sketch: Net.tick, Http.tick, Scene.tick | Compiles; portal bring-up on a phone still to do, see §5.5 |
 | `i2c.pio`, `pio_i2c.c/.h` | PIO I2C program and primitives, from pico-examples | Vendored, assert removed |
@@ -250,6 +251,22 @@ Open. Needs a flashed board, no phone or extra hardware.
 3. Switch to Accelerated at 20 minutes per day and watch Home's lit
    count move outside dusk and dawn.
 
+### 5.7 Flats on the board (done 2026-09-07: five example flats on the board, morning and evening scrubbed minute by minute, order kitchen, living, bedroom, asleep; bathroom at 03:07 for the elderly; re-scrub identical; no reboot)
+
+Open. Needs a flashed board, no phone or extra hardware.
+
+1. Create the five example flats (Andersson family, Karlsson elderly,
+   Nilsson nightowl, Persson family, Svensson away) through the Houses
+   view or the API, on lamps the board reports.
+2. Switch to Manual and scrub 05:30..08:30 and 21:00..00:30 in one-minute
+   steps, recording `flats[].state` and `lit`: kitchen before living in
+   the evening, bedroom last, `asleep` after bed, bathroom letters
+   appearing briefly at night.
+3. Re-scrub the same range and confirm the same result, no reboot in
+   between.
+4. Watch the Houses view during the scrub: the state word under each
+   flat must change along with the scrubber.
+
 ## 6. Things that were not verified and must be
 
 - **AL5887 register map.** Everything part-specific is in the define
@@ -280,6 +297,9 @@ Open. Needs a flashed board, no phone or extra hardware.
   is what makes the 20 kB page arrive in well under a second, but the
   link has never actually run at it here. Watch the boot log for
   `net: esp link 921600` and for garbled AT traffic under load.
+- **RAM with flats.** The four static `SceneConfig` copies are now about
+  8.8 kB each, and RAM use is about 29 percent. Adding a fifth static
+  copy anywhere must be avoided; reuse one of the four instead.
 - **No civil dusk at 55.7 N around midsummer.** The engine falls back to
   23:00. A clock-anchored off earlier than that wraps, so the lamp reads
   lit for about 22 hours. Pre-existing, now visible because the activity
@@ -303,6 +323,8 @@ Open. Needs a flashed board, no phone or extra hardware.
   edit `WebUI.gen.h`.
 - Config that the GUI edits is applied at runtime and persisted; nothing
   hardware-related is a compile-time switch.
+- Adding a household type or a room role touches the enum, the name
+  table, `setPreset`, the mock's presets and the GUI's lists together.
 
 ## 8. Design decisions worth knowing the reason for
 
@@ -332,3 +354,10 @@ Open. Needs a flashed board, no phone or extra hardware.
   `(seed, lamp, day, slot)` rather than rolled from a running random
   generator. The result is evaluated once per simulated minute into two
   bitmaps, so the 40 Hz tick only tests bits.
+- **Why the household is the unit.** A flat gets one daily rhythm and
+  the rooms are derived from it, not the other way round, because a
+  family does not run four independent lamp schedules, it runs one day.
+  Groups stay for everything that is not a household: a shop, a street,
+  a cluster of lamps with no rooms to speak of. Evening and morning
+  intervals are clipped to daylight so a clock-anchored rhythm does not
+  light a living room at 19:00 in June.

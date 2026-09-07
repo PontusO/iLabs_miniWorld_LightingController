@@ -125,6 +125,45 @@ BEHAVIOUR_PRESETS = {
     },
 }
 
+# Flats: spec section 2. SCENE_MAX_FLATS / FLAT_MAX_ROOMS mirror the firmware
+# #defines; ROOM_NAMES is the Room enum order, used both for /api/scene/presets
+# "rooms" and for the order status letters are checked in.
+SCENE_MAX_FLATS = 32
+FLAT_MAX_ROOMS = 12
+FLAT_TYPES = ("family", "elderly", "nightowl", "away", "custom")
+ROOM_NAMES = ("living", "kitchen", "bedroom", "bathroom", "hall", "other")
+ROOM_LETTERS = {
+    "living": "l", "kitchen": "k", "bedroom": "b",
+    "bathroom": "t", "hall": "h", "other": "o",
+}
+
+# setPreset(type), weekday values, spec section 2 table. Ranges are minutes
+# since midnight, (from, to); away sets every range to (-1, -1). "custom"
+# has no entry here: setPreset(custom) reuses the family values (spec: "custom
+# | family values"), so flat_from_json/make_flat fall back to "family" for it.
+FLAT_HOUSEHOLD_PRESETS = {
+    "family": {
+        "wake": (390, 435), "leave": (450, 495), "home": (960, 1050), "bed": (1350, 1410),
+        "outPercent": 14, "tvPercent": 70, "level": 210, "fadeMs": 300,
+        "dayActivity": 3, "nightActivity": 1,
+    },
+    "elderly": {
+        "wake": (345, 390), "leave": (570, 630), "home": (720, 810), "bed": (1275, 1335),
+        "outPercent": 7, "tvPercent": 40, "level": 180, "fadeMs": 400,
+        "dayActivity": 2, "nightActivity": 3,
+    },
+    "nightowl": {
+        "wake": (570, 660), "leave": (690, 750), "home": (1140, 1260), "bed": (1485, 1575),
+        "outPercent": 28, "tvPercent": 80, "level": 200, "fadeMs": 300,
+        "dayActivity": 1, "nightActivity": 1,
+    },
+    "away": {
+        "wake": (-1, -1), "leave": (-1, -1), "home": (-1, -1), "bed": (-1, -1),
+        "outPercent": 0, "tvPercent": 0, "level": 200, "fadeMs": 0,
+        "dayActivity": 0, "nightActivity": 0,
+    },
+}
+
 
 class ApiError(Exception):
     """Raised by a handler to send a 4xx/5xx {"error": msg} response."""
@@ -368,6 +407,216 @@ def group_from_json(o):
     return g
 
 
+# ---------------------------------------------------------------------------
+# Flats, spec section 2 (model), 3.5 (status) and 4.4 (this mock)
+# ---------------------------------------------------------------------------
+
+def make_flat(name, building, ftype, weekend, room_lamps_roles):
+    """Seed helper, the flat equivalent of make_group: setPreset(ftype) then
+    the fixed fields, no further overrides."""
+    preset = FLAT_HOUSEHOLD_PRESETS["family" if ftype == "custom" else ftype]
+    f = dict(preset)
+    f["name"] = name
+    f["building"] = building
+    f["type"] = ftype
+    f["weekend"] = weekend
+    f["rooms"] = [{"lamp": lamp, "role": role} for lamp, role in room_lamps_roles]
+    return f
+
+
+def flat_to_json(f):
+    return {
+        "name": f["name"],
+        "building": f["building"],
+        "type": f["type"],
+        "weekend": f["weekend"],
+        "rooms": [dict(r) for r in f["rooms"]],
+        "wake": list(f["wake"]),
+        "leave": list(f["leave"]),
+        "home": list(f["home"]),
+        "bed": list(f["bed"]),
+        "outPercent": f["outPercent"],
+        "tvPercent": f["tvPercent"],
+        "level": f["level"],
+        "fadeMs": f["fadeMs"],
+        "dayActivity": f["dayActivity"],
+        "nightActivity": f["nightActivity"],
+    }
+
+
+def flat_from_json(o, index):
+    """FlatConfig::fromJson: setPreset(type) first, then present fields
+    override (absent-means-preset, like groups), then clamp() (spec 2)."""
+    if not isinstance(o, dict):
+        raise ApiError(400, "flat must be an object")
+
+    ftype = o.get("type", "family")
+    if ftype not in FLAT_TYPES:
+        raise ApiError(400, "unknown household type")
+    preset = FLAT_HOUSEHOLD_PRESETS["family" if ftype == "custom" else ftype]
+    f = dict(preset)
+    f["type"] = ftype
+
+    # clamp(): name non-empty, name defaults to "Flat n"; both truncated to
+    # SCENE_NAME_LEN - 1 like group names.
+    name = str(o.get("name", ""))[:23].strip()
+    f["name"] = name if name else "Flat %d" % (index + 1)
+    f["building"] = str(o.get("building", ""))[:23]
+    f["weekend"] = bool(o.get("weekend", False))
+
+    rooms_in = o.get("rooms", [])
+    if not isinstance(rooms_in, list):
+        raise ApiError(400, "rooms must be an array")
+    # clamp(): roomCount 0..12.
+    rooms = []
+    for r in rooms_in[:FLAT_MAX_ROOMS]:
+        if not isinstance(r, dict):
+            raise ApiError(400, "room must be an object")
+        lamp = r.get("lamp", 0)
+        if not isinstance(lamp, int) or isinstance(lamp, bool):
+            lamp = 0
+        # clamp(): lamp below LAMPS_MAX_LAMPS.
+        lamp = max(0, min(LAMPS_MAX_LAMPS - 1, lamp))
+        role = r.get("role")
+        if role not in ROOM_NAMES:
+            role = "other"
+        rooms.append({"lamp": lamp, "role": role})
+    f["rooms"] = rooms
+
+    for key in ("wake", "leave", "home", "bed"):
+        v = o.get(key)
+        if (isinstance(v, list) and len(v) == 2
+                and all(isinstance(x, int) and not isinstance(x, bool) for x in v)):
+            frm, to = v
+            # clamp(): ranges ordered (to >= from).
+            if to < frm:
+                to = frm
+            f[key] = (frm, to)
+
+    for key in ("outPercent", "tvPercent"):
+        v = o.get(key)
+        if isinstance(v, int) and not isinstance(v, bool):
+            f[key] = max(0, min(100, v))
+    if isinstance(o.get("level"), int) and not isinstance(o.get("level"), bool):
+        f["level"] = max(0, min(255, o["level"]))
+    if isinstance(o.get("fadeMs"), int) and not isinstance(o.get("fadeMs"), bool):
+        f["fadeMs"] = max(0, o["fadeMs"])
+    for key in ("dayActivity", "nightActivity"):
+        v = o.get(key)
+        if isinstance(v, int) and not isinstance(v, bool):
+            f[key] = max(0, min(3, v))
+
+    return f
+
+
+def _in_range(x, lo, hi):
+    """True when x falls in [lo, hi] mod 1440; the interval may cross
+    midnight (lo > hi), same semantics as the firmware's inWindow()."""
+    lo %= 1440
+    hi %= 1440
+    x %= 1440
+    if lo <= hi:
+        return lo <= x <= hi
+    return x >= lo or x <= hi
+
+
+def _range_mid(pair):
+    a, b = pair
+    if a < 0 or b < 0:
+        return None
+    return (a + b) / 2.0
+
+
+def flat_status(f, minutes, is_weekday):
+    """Spec 3.5, simplified to the flat's range midpoints (no per-day draw,
+    no per-room jitter): state from the simulated minute, lit letters from
+    the room table (spec 3.2) evaluated at those same midpoints, plus a
+    once-in-ten-minutes bathroom night visit so a slept-in flat still looks
+    alive under the scrubber."""
+    m = minutes % 1440
+
+    if f["type"] == "away":
+        lit = []
+        if _in_range(m, 19 * 60, 22 * 60 + 30):
+            roles_present = {r["role"] for r in f["rooms"]}
+            # "a living or other room, if present": living wins when both
+            # exist, same as the "first flat wins" ownership tie-break.
+            if "living" in roles_present:
+                lit.append(ROOM_LETTERS["living"])
+            elif "other" in roles_present:
+                lit.append(ROOM_LETTERS["other"])
+        return "away", "".join(lit)
+
+    wake_mid = _range_mid(f["wake"])
+    leave_mid = _range_mid(f["leave"])
+    home_mid = _range_mid(f["home"])
+    bed_mid = _range_mid(f["bed"])
+
+    asleep = (wake_mid is not None and bed_mid is not None
+              and _in_range(m, bed_mid, wake_mid))
+    leave_valid = f["leave"][0] >= 0 and f["leave"][1] >= 0
+    is_out = (not asleep and is_weekday and leave_valid
+              and leave_mid is not None and home_mid is not None
+              and _in_range(m, leave_mid, home_mid))
+
+    if asleep:
+        state = "asleep"
+    elif is_out:
+        state = "out"
+    else:
+        state = "awake"
+
+    if is_out:
+        return state, ""
+
+    # dinner = home + lerp(45, 90, u4); the mock has no daily draw, so it
+    # uses the midpoint of that lerp, 45 + (90-45)/2 = 67.5.
+    dinner_mid = (home_mid + 67.5) if home_mid is not None else None
+    is_weekend_day = not is_weekday
+
+    # lit is one letter per lit *role*, in the canonical ROOM_NAMES order
+    # (living, kitchen, bedroom, bathroom, hall, other), not the order the
+    # flat's rooms happen to be listed in; a role appears at most once even
+    # if the flat has more than one room of it.
+    roles_present = {r["role"] for r in f["rooms"]}
+    lit = []
+    for role in ROOM_NAMES:
+        if role not in roles_present:
+            continue
+        on = False
+        if role == "kitchen":
+            if wake_mid is not None and _in_range(m, wake_mid, wake_mid + 30):
+                on = True
+            if (home_mid is not None and dinner_mid is not None
+                    and _in_range(m, home_mid + 10, dinner_mid + 60)):
+                on = True
+            if f["weekend"] and is_weekend_day and _in_range(m, 12 * 60, 13 * 60):
+                on = True
+        elif role == "hall":
+            if leave_mid is not None and _in_range(m, leave_mid - 5, leave_mid + 2):
+                on = True
+            if home_mid is not None and _in_range(m, home_mid - 1, home_mid + 6):
+                on = True
+        elif role in ("living", "other"):
+            if (dinner_mid is not None and bed_mid is not None
+                    and _in_range(m, dinner_mid, bed_mid - 10)):
+                on = True
+        elif role == "bedroom":
+            if bed_mid is not None and _in_range(m, bed_mid - 15, bed_mid + 8):
+                on = True
+            if wake_mid is not None and _in_range(m, wake_mid - 2, wake_mid + 8):
+                on = True
+        elif role == "bathroom":
+            if wake_mid is not None and _in_range(m, wake_mid + 5, wake_mid + 15):
+                on = True
+            if f["nightActivity"] > 0 and asleep and int(round(m)) % 10 == 0:
+                on = True
+        if on:
+            lit.append(ROOM_LETTERS.get(role, ""))
+
+    return state, "".join(lit)
+
+
 class SceneState:
     def __init__(self):
         self.lock = threading.Lock()
@@ -391,6 +640,33 @@ class SceneState:
             make_group("Shops", "shop", 96, 119),
             make_group("Pub and grill", "late", 120, 127),
             make_group("Kiosk, church", "allnight", 128, 143),
+        ]
+
+        # The seeded example households, spec 4.4: two buildings, five flats,
+        # each with kitchen/living/bedroom/bathroom/hall on lamps 16..40 (also
+        # inside the "Flats" group above, since a flat-owned lamp is only a
+        # /api/scene ownership detail the engine acts on, not the mock).
+        self.flats = [
+            make_flat("Andersson", "Storgatan 3", "family", True, [
+                (16, "kitchen"), (17, "living"), (18, "bedroom"),
+                (19, "bathroom"), (20, "hall"),
+            ]),
+            make_flat("Karlsson", "Storgatan 3", "elderly", True, [
+                (21, "kitchen"), (22, "living"), (23, "bedroom"),
+                (24, "bathroom"), (25, "hall"),
+            ]),
+            make_flat("Nilsson", "Storgatan 3", "nightowl", True, [
+                (26, "kitchen"), (27, "living"), (28, "bedroom"),
+                (29, "bathroom"), (30, "hall"),
+            ]),
+            make_flat("Persson", "Kyrkogatan 1", "family", True, [
+                (31, "kitchen"), (32, "living"), (33, "bedroom"),
+                (34, "bathroom"), (35, "hall"),
+            ]),
+            make_flat("Svensson", "Kyrkogatan 1", "away", False, [
+                (36, "kitchen"), (37, "living"), (38, "bedroom"),
+                (39, "bathroom"), (40, "hall"),
+            ]),
         ]
 
         # Manual clock anchor, minutes since midnight (0 = start manual at
@@ -497,6 +773,7 @@ class SceneState:
                 },
                 "seed": self.seed,
                 "groups": [group_to_json(g) for g in self.groups],
+                "flats": [flat_to_json(f) for f in self.flats],
             }
 
     def status_json(self):
@@ -505,6 +782,15 @@ class SceneState:
         sunset = (dusk - 25) % 1440
         sunrise = (dawn + 25) % 1440
         with self.lock:
+            # Weekday, spec 3.1: tm_wday derived from the simulated day of
+            # year with 2026-01-01 (doy 1) a Thursday; wday 0/6 is the
+            # weekend, used by flat_status() for the "out" state.
+            wday = (self.day_of_year() + 3) % 7
+            is_weekday = wday not in (0, 6)
+            flats_status = []
+            for f in self.flats:
+                state, lit = flat_status(f, minutes, is_weekday)
+                flats_status.append({"name": f["name"], "state": state, "lit": lit})
             return {
                 "time": fmt_time(minutes),
                 "minutes": int(round(minutes)),
@@ -521,6 +807,7 @@ class SceneState:
                 "active": self.active_count_at(minutes),
                 "lamps": LAMPS.lamp_count(),
                 "groups": len(self.groups),
+                "flats": flats_status,
             }
 
     def apply_config(self, data):
@@ -577,6 +864,15 @@ class SceneState:
                 raise ApiError(400, "too many groups")
             new_groups = [group_from_json(o) for o in groups_in]
 
+        new_flats = self.flats
+        if "flats" in data:
+            flats_in = data["flats"]
+            if not isinstance(flats_in, list):
+                raise ApiError(400, "flats must be an array")
+            if len(flats_in) > SCENE_MAX_FLATS:
+                raise ApiError(400, "too many flats")
+            new_flats = [flat_from_json(o, i) for i, o in enumerate(flats_in)]
+
         manual_time_given = isinstance(clk, dict) and (
             isinstance(clk.get("manualTime"), str) or isinstance(clk.get("manualTime"), int)
         )
@@ -595,6 +891,7 @@ class SceneState:
             self.dayOfYearOverride = new_day_of_year
             self.seed = new_seed
             self.groups = new_groups
+            self.flats = new_flats
             if manual_time_given:
                 self._anchor_sim = self._manual_minutes
                 self._anchor_wall = time.time()
@@ -668,6 +965,24 @@ class SceneState:
                 "dayActivity": p["dayActivity"],
                 "nightActivity": p["nightActivity"],
             }
+        # Households: setPreset() rhythm fields only, no "custom" entry
+        # (spec 3.5: '"households": {...} (no entry for custom)').
+        out["households"] = {}
+        for name in ("family", "elderly", "nightowl", "away"):
+            p = FLAT_HOUSEHOLD_PRESETS[name]
+            out["households"][name] = {
+                "wake": list(p["wake"]),
+                "leave": list(p["leave"]),
+                "home": list(p["home"]),
+                "bed": list(p["bed"]),
+                "outPercent": p["outPercent"],
+                "tvPercent": p["tvPercent"],
+                "level": p["level"],
+                "fadeMs": p["fadeMs"],
+                "dayActivity": p["dayActivity"],
+                "nightActivity": p["nightActivity"],
+            }
+        out["rooms"] = list(ROOM_NAMES)
         return out
 
 

@@ -361,8 +361,21 @@ void HttpServer::sendStatus(WiFiClient &c, int code, const char *type,
     }
     head += "\r\n";
     c.write((const uint8_t *)head.c_str(), head.length());
-    if (body.length()) {
-        c.write((const uint8_t *)body.c_str(), body.length());
+    // The AT firmware caps one send at about 2 kB, so a body is written in
+    // UI_CHUNK pieces like the page is; a JSON scene config with flats is
+    // over 3 kB and arrived headerless otherwise (bench, 2026-09-07).
+    const uint8_t *p = (const uint8_t *)body.c_str();
+    size_t sent = 0;
+    while (sent < body.length()) {
+        size_t n = body.length() - sent;
+        if (n > UI_CHUNK) {
+            n = UI_CHUNK;
+        }
+        size_t written = c.write(p + sent, n);
+        if (written == 0) {
+            break;                      // client gone, stop pushing
+        }
+        sent += written;
     }
 }
 

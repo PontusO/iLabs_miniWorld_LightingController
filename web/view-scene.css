@@ -264,6 +264,17 @@
 
 .view-scene .more { color: var(--muted); font-size: 0.75em; margin-left: 4px; }
 
+/* A lamp a household has taken: a window, not a street lamp. The shape
+   says it, so the difference survives a colour-blind reading. */
+.view-scene .lamp.taken {
+    border-radius: 2px;
+    box-shadow: 0 0 0 1px var(--muted);
+}
+
+.view-scene .lamp.taken.on {
+    box-shadow: 0 0 6px 2px var(--glow), 0 0 0 1px var(--muted);
+}
+
 .view-scene .gform { padding-bottom: 12px; }
 
 /* The life layer, set off from the override grid above it by a rule so the

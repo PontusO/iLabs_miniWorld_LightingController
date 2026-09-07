@@ -236,3 +236,140 @@
         margin-bottom: 30px;
     }
 }
+
+/* ---------------------------------------------------------- households --- */
+
+/* One chip per flat: who is home right now, and which rooms are lit. The
+   shape carries the state on screen, the word carries it to a reader. */
+.view-home .hh-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.view-home .hh-chip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 10px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--bg);
+    font-size: 0.85rem;
+}
+
+.view-home .hh-name {
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.view-home .hh-lit {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+}
+
+.view-home .hh-dark {
+    color: var(--muted);
+    font-size: 0.85em;
+}
+
+.view-home .rd {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 17px;
+    height: 17px;
+    border-radius: 50%;
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    font-size: 0.68rem;
+    font-weight: 600;
+    line-height: 1;
+}
+
+/* Four shapes, one per state: a lit lamp, a crescent, a door, a dash. */
+.view-home .st {
+    position: relative;
+    display: inline-block;
+    flex: none;
+    width: 14px;
+    height: 14px;
+}
+
+.view-home .st.awake::before {
+    content: "";
+    position: absolute;
+    left: 1px;
+    top: 0;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 6px 2px var(--glow);
+}
+
+.view-home .st.awake::after {
+    content: "";
+    position: absolute;
+    left: 6px;
+    top: 12px;
+    width: 2px;
+    height: 3px;
+    background: var(--muted);
+}
+
+.view-home .st.asleep {
+    overflow: hidden;
+    border-radius: 50%;
+    background: var(--muted);
+}
+
+.view-home .st.asleep::after {
+    content: "";
+    position: absolute;
+    left: 4px;
+    top: -3px;
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    background: var(--bg);
+}
+
+.view-home .st.out {
+    border: 1px solid var(--muted);
+    border-radius: 2px;
+}
+
+.view-home .st.out::after {
+    content: "";
+    position: absolute;
+    right: 2px;
+    top: 5px;
+    width: 2px;
+    height: 2px;
+    border-radius: 50%;
+    background: var(--muted);
+}
+
+.view-home .st.away::after {
+    content: "";
+    position: absolute;
+    left: 1px;
+    top: 6px;
+    width: 12px;
+    height: 2px;
+    background: var(--muted);
+}
+
+/* The state in words, for a screen reader only. */
+.view-home .sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}

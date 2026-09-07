@@ -41,6 +41,18 @@ void SceneWebApi::statusJson(String &body) {
     doc["lamps"] = Lamps.count();
     doc["groups"] = Scene.config().groupCount;
 
+    // One entry per flat, in config order: what the household is doing and
+    // which of its rooms are lit right now.
+    JsonArray fs = doc["flats"].to<JsonArray>();
+    for (uint8_t f = 0; f < Scene.config().flatCount; f++) {
+        char lit[FLAT_MAX_ROOMS + 1];
+        Scene.flatLitRooms(f, lit, sizeof(lit));
+        JsonObject o = fs.add<JsonObject>();
+        o["name"] = Scene.config().flats[f].name;
+        o["state"] = Scene.flatState(f);
+        o["lit"] = lit;
+    }
+
     body = "";
     serializeJson(doc, body);
 }
@@ -62,6 +74,9 @@ int SceneWebApi::putConfig(const String &in, String &body) {
     if (!Scene.apply(cfg, true)) {
         return error(500, "applied but could not be stored", body);
     }
+    // Let the engine settle one tick, as putClock does, so the flat states
+    // in the reply are the new scene's and not the old one's.
+    Scene.tick();
     statusJson(body);
     return 200;
 }
@@ -149,6 +164,45 @@ int SceneWebApi::getPresets(String &body) {
         o["dayActivity"] = G.dayActivity;
         o["nightActivity"] = G.nightActivity;
     }
+
+    // The household rhythms, for the flat editor. No entry for custom: it is
+    // "keep what I typed" and re-seeds from nothing.
+    JsonObject hh = doc["households"].to<JsonObject>();
+    for (uint8_t i = 0; i < (uint8_t)Household::COUNT; i++) {
+        if ((Household)i == Household::Custom) {
+            continue;
+        }
+        // Static: a FlatConfig carries the room table, and setPreset() fills
+        // in every field this loop reads.
+        static FlatConfig F;
+        F.setPreset((Household)i);
+        JsonObject o = hh[SceneConfig::householdName((Household)i)].to<JsonObject>();
+        o["weekend"] = F.weekend;
+        JsonArray wk = o["wake"].to<JsonArray>();
+        wk.add(F.wakeFrom);
+        wk.add(F.wakeTo);
+        JsonArray lv = o["leave"].to<JsonArray>();
+        lv.add(F.leaveFrom);
+        lv.add(F.leaveTo);
+        JsonArray hm = o["home"].to<JsonArray>();
+        hm.add(F.homeFrom);
+        hm.add(F.homeTo);
+        JsonArray bd = o["bed"].to<JsonArray>();
+        bd.add(F.bedFrom);
+        bd.add(F.bedTo);
+        o["outPercent"] = F.outPercent;
+        o["tvPercent"] = F.tvPercent;
+        o["level"] = F.level;
+        o["fadeMs"] = F.fadeMs;
+        o["dayActivity"] = F.dayActivity;
+        o["nightActivity"] = F.nightActivity;
+    }
+
+    JsonArray rooms = doc["rooms"].to<JsonArray>();
+    for (uint8_t i = 0; i < (uint8_t)Room::COUNT; i++) {
+        rooms.add(SceneConfig::roomName((Room)i));
+    }
+
     body = "";
     serializeJson(doc, body);
     return 200;

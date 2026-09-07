@@ -1,6 +1,8 @@
 // view-scene.js - Scene view: the town clock over a horizon scrubber, the
 //                 group editor that gives lamps a behaviour, and the
-//                 location dusk and dawn are computed from.
+//                 location dusk and dawn are computed from. Lamps a
+//                 household on the Houses view has taken are drawn apart,
+//                 since a group no longer drives them.
 //
 // Invector Embedded Systems AB
 
@@ -47,6 +49,7 @@
     var errs = [];      // lamp text error per group, "" when good
     var texts = [];     // the lamp text as it arrived, kept for a bad group
     var lampMax = 0;    // lamps the controller reports, 0 until the first status
+    var taken = {};     // lamp -> the flat that owns it, first flat wins
     var expanded = -1, changed = false;
     var holdUntil = 0;  // a drag owns the thumb until this moment passes
     var lastSend = 0, timeTimer = null, pendingTime = null;
@@ -306,6 +309,19 @@
         else g[key] = v;
     }
 
+    // A lamp inside a flat is driven by the household, not by this group,
+    // so its disc is a window rather than a street lamp: square corners and
+    // a ring, with the flat's name on it.
+    function disc(lamp, member) {
+        var d = App.lampDisc(member);
+        var name = taken[lamp];
+        if (name !== undefined) {
+            d.className += " taken";
+            d.setAttribute("title", "lamp " + lamp + ", in " + name);
+        }
+        return d;
+    }
+
     // Discs cover the span the group reaches over, so membership reads as a
     // shape: lit for a lamp in the group, dark for a gap. A long span stops
     // at 48 discs and counts the rest.
@@ -319,7 +335,7 @@
         var member = {}, i, shown = 0;
         for (i = 0; i < list.length; i++) member[list[i]] = true;
         for (i = 0; i < span; i++) {
-            box.appendChild(App.lampDisc(!!member[lo + i]));
+            box.appendChild(disc(lo + i, !!member[lo + i]));
             if (member[lo + i]) shown++;
         }
         if (list.length > shown) {
@@ -328,8 +344,12 @@
         }
     }
 
-    function countText(n) {
-        return n + (n === 1 ? " lamp" : " lamps");
+    // "16 lamps, 3 in flats": the second half only when a household has
+    // taken some of them, so a town without flats reads as it always did.
+    function countText(list) {
+        var n = list.length, t = 0;
+        for (var i = 0; i < n; i++) if (taken[list[i]] !== undefined) t++;
+        return n + (n === 1 ? " lamp" : " lamps") + (t ? ", " + t + " in flats" : "");
     }
 
     // The red line under the Lamps field. One place, so a group that arrived
@@ -354,7 +374,7 @@
         var name = el("span", { class: "gname" }, g.name || "Unnamed group");
         var beh = el("span", { class: "gbeh" }, behLabel(g.behaviour));
         var count = el("span", { class: "gcount tnum" + (errs[i] ? " bad" : "") },
-            errs[i] ? "unreadable" : countText(lists[i].length));
+            errs[i] ? "unreadable" : countText(lists[i]));
         var discs = el("div", { class: "discs", "aria-hidden": "true" });
         fillDiscs(discs, lists[i]);
 
@@ -499,7 +519,7 @@
                         count.textContent = "unreadable";
                     } else {
                         fillDiscs(discs, lists[i]);
-                        count.textContent = countText(lists[i].length);
+                        count.textContent = countText(lists[i]);
                     }
                     touch();
                 }
@@ -622,6 +642,7 @@
         lists = [];
         errs = [];
         texts = [];
+        taken = {};
         expanded = -1;
         changed = false;
         holdUntil = 0;
@@ -647,6 +668,12 @@
             presets = r[0];
             cfg = r[1];
             if (!cfg.groups) cfg.groups = [];
+            taken = {};
+            (cfg.flats || []).forEach(function (f) {
+                (f.rooms || []).forEach(function (rm) {
+                    if (taken[rm.lamp] === undefined) taken[rm.lamp] = f.name || "a flat";
+                });
+            });
             if (!cfg.location) cfg.location = {};
             if (!cfg.clock) cfg.clock = {};
             // A lamp list this page cannot read is kept as text and the

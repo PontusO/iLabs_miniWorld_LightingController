@@ -1,0 +1,423 @@
+/*
+    view-houses.css - the Houses view. A building is a heading with its
+    flats beneath it; a flat row is a name, who is home and a strip of
+    lettered room discs that light with the rooms. Every selector sits
+    under .view-houses.
+
+    Invector Embedded Systems AB
+*/
+
+.view-houses h2 { font-size: 1.05em; font-weight: 600; margin: 0 0 8px 0; }
+
+.view-houses h3 {
+    margin: 14px 0 8px 0;
+    font-size: 0.9em;
+    font-weight: 600;
+}
+
+.view-houses .hint {
+    color: var(--muted);
+    font-size: 0.85em;
+    max-width: 58ch;
+    margin: 8px 0;
+}
+
+.view-houses .chead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+
+/* ---------------------------------------------------------- buildings --- */
+
+.view-houses .building { margin-top: 10px; }
+
+/* The address is the shelf the flats stand on, so it carries the rule. */
+.view-houses .bname {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0;
+    padding-bottom: 4px;
+    color: var(--muted);
+    font-size: 0.85em;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+}
+
+.view-houses .bname::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--line);
+}
+
+/* -------------------------------------------------------------- flats --- */
+
+.view-houses .flat { border-bottom: 1px solid var(--line); }
+.view-houses .flat:last-child { border-bottom: 0; }
+
+.view-houses .frow {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    width: 100%;
+    min-height: 44px;
+    padding: 9px 20px 9px 0;
+    background: transparent;
+    border: 0;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+/* A caret, so open and closed differ in shape and not only in colour. */
+.view-houses .frow::after {
+    content: "";
+    position: absolute;
+    right: 2px;
+    top: 18px;
+    width: 0;
+    height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 6px solid var(--muted);
+    transition: transform var(--transition-fast);
+}
+
+.view-houses .frow[aria-expanded="true"]::after {
+    transform: rotate(180deg);
+    border-top-color: var(--accent);
+}
+
+.view-houses .ftop {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.view-houses .fname {
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.view-houses .fstate {
+    display: flex;
+    align-items: center;
+    flex: none;
+    gap: 6px;
+    color: var(--muted);
+    font-size: 0.85em;
+}
+
+.view-houses .fmeta {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.view-houses .ftype {
+    padding: 2px 9px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    color: var(--muted);
+    font-size: 0.78em;
+}
+
+/* A flat whose rooms hold Save says so on the closed row too. */
+.view-houses .fbad {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--fault);
+    font-size: 0.78em;
+}
+
+.view-houses .ring {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 14px;
+    height: 14px;
+    border: 1px solid currentColor;
+    border-radius: 50%;
+    font-size: 0.62rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+/* ------------------------------------------------------- state glyphs --- */
+
+/* Four shapes, one per state: a lit lamp, a crescent, a door, a dash. The
+   word beside them says the same thing, so neither carries it alone. */
+.view-houses .st {
+    position: relative;
+    display: inline-block;
+    flex: none;
+    width: 14px;
+    height: 14px;
+}
+
+.view-houses .st.awake::before {
+    content: "";
+    position: absolute;
+    left: 1px;
+    top: 0;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 6px 2px var(--glow);
+}
+
+.view-houses .st.awake::after {
+    content: "";
+    position: absolute;
+    left: 6px;
+    top: 12px;
+    width: 2px;
+    height: 3px;
+    background: var(--muted);
+}
+
+.view-houses .st.asleep {
+    overflow: hidden;
+    border-radius: 50%;
+    background: var(--muted);
+}
+
+.view-houses .st.asleep::after {
+    content: "";
+    position: absolute;
+    left: 4px;
+    top: -3px;
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    background: var(--card);
+}
+
+.view-houses .st.out {
+    border: 1px solid var(--muted);
+    border-radius: 2px;
+}
+
+.view-houses .st.out::after {
+    content: "";
+    position: absolute;
+    right: 2px;
+    top: 5px;
+    width: 2px;
+    height: 2px;
+    border-radius: 50%;
+    background: var(--muted);
+}
+
+.view-houses .st.away::after {
+    content: "";
+    position: absolute;
+    left: 1px;
+    top: 6px;
+    width: 12px;
+    height: 2px;
+    background: var(--muted);
+}
+
+/* --------------------------------------------------------- room discs --- */
+
+.view-houses .frooms {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+}
+
+.view-houses .rd {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 17px;
+    height: 17px;
+    border-radius: 50%;
+    border: 1px solid var(--line);
+    background: var(--bg);
+    color: var(--muted);
+    font-size: 0.62rem;
+    line-height: 1;
+    transition: background var(--transition-fast), color var(--transition-fast),
+                box-shadow var(--transition-fast);
+}
+
+.view-houses .rd.on {
+    border-color: transparent;
+    background: var(--accent);
+    color: #1a1305;
+    box-shadow: 0 0 6px 1px var(--glow);
+}
+
+.view-houses .rnone { color: var(--muted); font-size: 0.75em; }
+
+/* The lit rooms in words, for a screen reader only. */
+.view-houses .sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
+/* -------------------------------------------------------- the editor --- */
+
+.view-houses .fform { padding: 2px 0 14px 0; }
+
+.view-houses .fform .field > span { color: var(--muted); font-size: 0.85em; }
+.view-houses input[type="number"],
+.view-houses .tin { font-variant-numeric: tabular-nums; }
+
+.view-houses .fg {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 0 10px;
+}
+
+.view-houses .field.wk .switch { align-self: flex-start; margin-top: 8px; }
+
+.view-houses .rline {
+    margin: 2px 0 4px 0;
+    max-width: 58ch;
+    color: var(--muted);
+    font-size: 0.85em;
+}
+
+/* Rooms: a lamp number, what the room is, and a way to drop the row. */
+.view-houses .rhead,
+.view-houses .rrow {
+    display: grid;
+    grid-template-columns: 92px 1fr 44px;
+    gap: 8px;
+    align-items: center;
+}
+
+.view-houses .rhead {
+    margin-bottom: 4px;
+    color: var(--muted);
+    font-size: 0.8em;
+}
+
+.view-houses .rtable { margin-bottom: 10px; }
+.view-houses .rrow { margin-bottom: 8px; }
+
+.view-houses .rrow input,
+.view-houses .rrow select,
+.view-houses .tin {
+    width: 100%;
+    min-height: 44px;
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--text);
+    font: inherit;
+    font-size: 1em;
+}
+
+.view-houses .rdel {
+    min-width: 44px;
+    min-height: 44px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    font-size: 1.1em;
+    cursor: pointer;
+}
+
+.view-houses .rdel:hover { color: var(--fault); border-color: var(--fault); }
+
+.view-houses .rooms-add { margin-bottom: 4px; }
+
+/* A rhythm range reads as one line: what it is, from, to. */
+.view-houses .rng {
+    display: grid;
+    grid-template-columns: 60px 1fr 1fr;
+    gap: 0 10px;
+    align-items: center;
+}
+
+.view-houses .rlab {
+    color: var(--text);
+    font-size: 0.9em;
+}
+
+.view-houses .rhythm { margin-bottom: 4px; }
+
+.view-houses .err {
+    margin: 0 0 8px 0;
+    color: var(--fault);
+    font-size: 0.85em;
+}
+
+.view-houses .warn {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    margin: 0 0 8px 0;
+    color: var(--accent);
+    font-size: 0.85em;
+}
+
+.view-houses .warn::before {
+    content: "!";
+    flex: none;
+    width: 14px;
+    height: 14px;
+    border: 1px solid currentColor;
+    border-radius: 50%;
+    font-size: 0.72em;
+    font-weight: 700;
+    line-height: 13px;
+    text-align: center;
+}
+
+.view-houses .btn.danger {
+    background: transparent;
+    border-color: var(--fault);
+    color: var(--fault);
+    margin-top: 10px;
+}
+
+.view-houses .actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 14px;
+}
+
+.view-houses .mark { color: var(--accent); font-size: 0.85em; }
+
+.view-houses .mark:not(:empty)::before {
+    content: "";
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    margin-right: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+}
+
+@media (min-width: 720px) {
+    .view-houses .rng { grid-template-columns: 80px 1fr 1fr; max-width: 460px; }
+}
