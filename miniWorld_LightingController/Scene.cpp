@@ -23,6 +23,8 @@ void GroupConfig::setPreset(Behaviour b) {
     morning = false;
     level = 255;
     fadeMs = 800;
+    dayActivity = 0;
+    nightActivity = 0;
 
     switch (b) {
         case Behaviour::Street:
@@ -39,6 +41,8 @@ void GroupConfig::setPreset(Behaviour b) {
             morning = true;
             level = 200;
             fadeMs = 300;
+            dayActivity = 2;
+            nightActivity = 1;
             break;
 
         case Behaviour::Shop:
@@ -46,17 +50,67 @@ void GroupConfig::setPreset(Behaviour b) {
             offAnchor = Anchor::Clock; offFrom = 1080; offTo = 1110;   // 18:00 to 18:30
             level = 230;
             fadeMs = 200;
+            dayActivity = 1;
             break;
 
         case Behaviour::Late:
             onAnchor = Anchor::Dusk;   onFrom = -30;  onTo = 30;
             offAnchor = Anchor::Clock; offFrom = 1380; offTo = 1560;   // 23:00 to 02:00
             level = 220;
+            dayActivity = 1;
             break;
 
         case Behaviour::AllNight:
             onAnchor = Anchor::Dusk;   onFrom = -15;  onTo = 0;
             offAnchor = Anchor::Dawn;  offFrom = 0;   offTo = 15;
+            break;
+
+        // The four households. They fill the same fields as the buildings
+        // above, so everything stays tunable per group.
+
+        case Behaviour::Family:
+            onAnchor = Anchor::Dusk;   onFrom = 0;    onTo = 180;
+            offAnchor = Anchor::Clock; offFrom = 1350; offTo = 1440;   // 22:30 to 00:00
+            litPercent = 90;
+            flickerPercent = 25;
+            morning = true;
+            level = 210;
+            fadeMs = 300;
+            dayActivity = 3;
+            nightActivity = 1;
+            break;
+
+        case Behaviour::Elderly:
+            onAnchor = Anchor::Dusk;   onFrom = -30;  onTo = 60;
+            offAnchor = Anchor::Clock; offFrom = 1260; offTo = 1335;   // 21:00 to 22:15
+            litPercent = 90;
+            flickerPercent = 8;
+            morning = true;
+            level = 180;
+            fadeMs = 400;
+            dayActivity = 2;
+            nightActivity = 3;
+            break;
+
+        case Behaviour::NightOwl:
+            onAnchor = Anchor::Dusk;   onFrom = 60;   onTo = 240;
+            offAnchor = Anchor::Clock; offFrom = 1470; offTo = 1590;   // 00:30 to 02:30
+            litPercent = 80;
+            flickerPercent = 30;
+            level = 200;
+            fadeMs = 300;
+            dayActivity = 1;
+            nightActivity = 1;
+            break;
+
+        case Behaviour::Away:
+            // A timer lamp: one flat in four, the same minutes every evening
+            // and no life at all, which is exactly how it should read.
+            onAnchor = Anchor::Clock;  onFrom = 1140; onTo = 1150;    // 19:00 to 19:10
+            offAnchor = Anchor::Clock; offFrom = 1350; offTo = 1360;   // 22:30 to 22:40
+            litPercent = 25;
+            level = 200;
+            fadeMs = 0;
             break;
 
         default:
@@ -102,7 +156,8 @@ uint16_t GroupConfig::lampCount() const {
 // ---------------------------------------------------------------------------
 
 static const char *const behaviourNames[] = {
-    "off", "street", "home", "shop", "late", "allnight"
+    "off", "street", "home", "shop", "late", "allnight",
+    "family", "elderly", "nightowl", "away"
 };
 static const char *const anchorNames[] = { "dusk", "dawn", "clock" };
 static const char *const modeNames[] = { "real", "accelerated", "manual" };
@@ -204,6 +259,8 @@ void SceneConfig::clamp() {
         if (G.onTo < G.onFrom) G.onTo = G.onFrom;
         if (G.offTo < G.offFrom) G.offTo = G.offFrom;
         if (G.fadeMs > 60000) G.fadeMs = 60000;
+        if (G.dayActivity > 3) G.dayActivity = 3;
+        if (G.nightActivity > 3) G.nightActivity = 3;
     }
 }
 
@@ -303,6 +360,8 @@ void SceneConfig::toJson(String &out) const {
         o["morning"] = G.morning;
         o["level"] = G.level;
         o["fadeMs"] = G.fadeMs;
+        o["dayActivity"] = G.dayActivity;
+        o["nightActivity"] = G.nightActivity;
     }
 
     out = "";
@@ -392,6 +451,11 @@ bool SceneConfig::fromJson(const String &in, String *error) {
             if (o["morning"].is<bool>()) G.morning = o["morning"];
             if (o["level"].is<int>()) G.level = o["level"];
             if (o["fadeMs"].is<int>()) G.fadeMs = o["fadeMs"];
+
+            // Absent means "whatever this behaviour's preset says", which
+            // setPreset() has already put in place above.
+            if (o["dayActivity"].is<int>()) G.dayActivity = o["dayActivity"];
+            if (o["nightActivity"].is<int>()) G.nightActivity = o["nightActivity"];
 
             next.groupCount++;
         }

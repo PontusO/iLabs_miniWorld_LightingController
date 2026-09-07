@@ -266,6 +266,27 @@
 
 .view-scene .gform { padding-bottom: 12px; }
 
+/* The life layer, set off from the override grid above it by a rule so the
+   two selects read as one thought and not as two more overrides. */
+.view-scene .act {
+    margin-top: 4px;
+    padding-top: 10px;
+    border-top: 1px solid var(--line);
+}
+
+.view-scene .act h3 {
+    margin: 0 0 8px 0;
+    font-size: 0.9em;
+    font-weight: 600;
+}
+
+.view-scene .aline {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.85em;
+    max-width: 58ch;
+}
+
 .view-scene .err {
     color: var(--fault);
     font-size: 0.85em;

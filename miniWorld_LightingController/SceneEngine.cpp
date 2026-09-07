@@ -52,6 +52,12 @@ void SceneEngine::rebuild() {
             }
         }
     }
+    memset(_eventOn, 0, sizeof(_eventOn));
+    memset(_eventOff, 0, sizeof(_eventOff));
+    _active = 0;
+    _eventSim = 0xFFFF;             // no simulated minute: evaluate on next tick
+    _eventDoy = 0;
+
     _sunForDoy = -1;
     _startMs = millis();
     _lastTickMs = 0;
@@ -222,8 +228,39 @@ static inline float clamp01(float v) {
     return v < 0 ? 0 : (v > 1 ? 1 : v);
 }
 
-uint16_t SceneEngine::targetLevel(uint16_t lamp, const GroupConfig &G, bool &flicker) {
+// The two personal moments and the morning light, on their own. The activity
+// layer needs the off moment even for a lamp that is dark or that never takes
+// part, so this runs before targetLevel()'s early exits. The arithmetic is
+// the arithmetic targetLevel() has always done, moved and not changed.
+void SceneEngine::lampMoments(uint16_t lamp, const GroupConfig &G, LampMoments &m) const {
+    // Personal moment inside each window, plus a daily wobble.
+    float jitterOn = (dayUnit(lamp, 11) - 0.5f) * JITTER_FRACTION;
+    float jitterOff = (dayUnit(lamp, 12) - 0.5f) * JITTER_FRACTION;
+
+    m.on = anchorBase(G.onAnchor, false) +
+           lerp(G.onFrom, G.onTo, clamp01(unit(lamp, 2) + jitterOn));
+    m.off = anchorBase(G.offAnchor, true) +
+            lerp(G.offFrom, G.offTo, clamp01(unit(lamp, 3) + jitterOff));
+
+    if (m.off <= m.on) {
+        m.off += 1440;
+    }
+
+    // Winter mornings: some households are up before it is light.
+    m.morningApplies = G.morning && unit(lamp, 4) < 0.7f;
+    m.morningOn = lerp(6 * 60 + 15, 7 * 60 + 45, unit(lamp, 5));
+    m.morningOff = _dawn + 15;
+    if (m.morningOff < m.morningOn + 45) {
+        m.morningOff = m.morningOn + 45;
+    }
+    m.morningLit = false;
+}
+
+uint16_t SceneEngine::targetLevel(uint16_t lamp, const GroupConfig &G, bool &flicker,
+                                  LampMoments &m) {
     flicker = false;
+    lampMoments(lamp, G, m);
+
     if (G.behaviour == Behaviour::Off || G.litPercent == 0) {
         return 0;
     }
@@ -233,29 +270,12 @@ uint16_t SceneEngine::targetLevel(uint16_t lamp, const GroupConfig &G, bool &fli
         return 0;
     }
 
-    // Personal moment inside each window, plus a daily wobble.
-    float jitterOn = (dayUnit(lamp, 11) - 0.5f) * JITTER_FRACTION;
-    float jitterOff = (dayUnit(lamp, 12) - 0.5f) * JITTER_FRACTION;
-
-    int on = anchorBase(G.onAnchor, false) +
-             lerp(G.onFrom, G.onTo, clamp01(unit(lamp, 2) + jitterOn));
-    int off = anchorBase(G.offAnchor, true) +
-              lerp(G.offFrom, G.offTo, clamp01(unit(lamp, 3) + jitterOff));
-
-    if (off <= on) {
-        off += 1440;
-    }
-
-    bool lit = inWindow(_sim, on, off);
+    bool lit = inWindow(_sim, m.on, m.off);
 
     // Winter mornings: some households are up before it is light.
-    if (!lit && G.morning && unit(lamp, 4) < 0.7f) {
-        int mOn = lerp(6 * 60 + 15, 7 * 60 + 45, unit(lamp, 5));
-        int mOff = _dawn + 15;
-        if (mOff < mOn + 45) {
-            mOff = mOn + 45;
-        }
-        lit = (_sim >= mOn && _sim < mOff);
+    if (!lit && m.morningApplies) {
+        lit = (_sim >= m.morningOn && _sim < m.morningOff);
+        m.morningLit = lit;
     }
 
     if (!lit) {
@@ -264,6 +284,172 @@ uint16_t SceneEngine::targetLevel(uint16_t lamp, const GroupConfig &G, bool &fli
 
     flicker = (G.flickerPercent > 0) && (unit(lamp, 6) * 100.0f < G.flickerPercent);
     return (uint16_t)(G.level * 257);
+}
+
+// ---------------------------------------------------------------------------
+// Activity: the life on top of the habits
+// ---------------------------------------------------------------------------
+
+#define SLOT_MIN        5           // minutes in one slot
+#define SLOTS_PER_DAY   288         // 1440 / SLOT_MIN
+#define SLOTS_PER_HOUR  12
+#define SLOT_SCAN       4           // slots that can still be running at m
+#define EVENT_P_MAX     0.5f        // no slot is ever more likely than this
+
+// Event kinds, which are also indices into the length tables below.
+#define EVENT_DAY       0
+#define EVENT_DIP       1
+#define EVENT_NIGHT     2
+
+static const uint8_t eventMinLen[3] = {  3, 2, 1 };     // minutes
+static const uint8_t eventMaxLen[3] = { 15, 5, 4 };
+
+// Rates by activity level. Day and dip are per lamp per hour, night is the
+// expected count per lamp per night.
+static const float dayRate[4]   = { 0.0f, 0.15f, 0.35f, 0.70f };
+static const float dipRate[4]   = { 0.0f, 0.08f, 0.15f, 0.30f };
+static const float nightRate[4] = { 0.0f, 0.40f, 0.80f, 1.60f };
+
+// The daily curve w(t): how much of the daytime rate applies at minute t.
+// Mornings are busy, the middle of the day is quiet, the evening is busy
+// again, and nothing much happens in the small hours.
+static float dayCurve(int t) {
+    if (t < 330)  return 0.1f;      // 23:00 to 05:30, wrapped
+    if (t < 390)  return 0.4f;      // 05:30 to 06:30
+    if (t < 510)  return 1.0f;      // 06:30 to 08:30
+    if (t < 660)  return 0.5f;      // 08:30 to 11:00
+    if (t < 960)  return 0.3f;      // 11:00 to 16:00
+    if (t < 1260) return 1.0f;      // 16:00 to 21:00
+    if (t < 1380) return 0.6f;      // 21:00 to 23:00
+    return 0.1f;                    // 23:00 to midnight
+}
+
+// One hash decides everything about one slot: whether an event starts in it,
+// which minute of the slot it starts on, and how long it runs. Nothing is
+// carried from slot to slot, so the town is the same whichever way the clock
+// is scrubbed and whatever speed it runs at.
+bool SceneEngine::eventAt(uint16_t lamp, int m, uint16_t doy, uint8_t kind,
+                          float rate, int windowFrom, int windowTo) const {
+    if (kind > EVENT_NIGHT || rate <= 0.0f) {
+        return false;
+    }
+
+    // The night rate is a count per night, so it is spread over the slots of
+    // this lamp's own night rather than over an hour.
+    float nightSlots = 0.0f;
+    if (kind == EVENT_NIGHT) {
+        int len = windowTo - windowFrom;
+        if (len <= 0) {
+            return false;
+        }
+        nightSlots = (float)len / (float)SLOT_MIN;
+    }
+
+    // The slots that could still be covering m: the one m falls in and the
+    // three before it, which is the longest event plus a slot. Oldest first,
+    // so that the first event to contain m wins; events never stack.
+    int slot = m / SLOT_MIN;
+    for (int k = SLOT_SCAN - 1; k >= 0; k--) {
+        int s = slot - k;
+        uint16_t d = doy;
+        int dayBase = 0;
+        if (s < 0) {
+            // Before midnight, so yesterday's slot on yesterday's day.
+            s += SLOTS_PER_DAY;
+            d = (doy > 1) ? (uint16_t)(doy - 1) : 366;
+            dayBase = -1440;
+        }
+
+        uint32_t h = hash((uint32_t)lamp + 0x10000u * d, 0x500u + (uint32_t)s);
+        float u = (float)(h >> 8) / 16777216.0f;
+
+        int ts = s * SLOT_MIN;
+        float p;
+        if (kind == EVENT_DAY) {
+            p = rate * dayCurve(ts) / (float)SLOTS_PER_HOUR;
+        } else if (kind == EVENT_DIP) {
+            p = rate / (float)SLOTS_PER_HOUR;
+        } else {
+            p = rate / nightSlots;
+        }
+        if (p > EVENT_P_MAX) {
+            p = EVENT_P_MAX;
+        }
+        if (u >= p) {
+            continue;
+        }
+
+        int offset = (int)(h & 0x07u) % 5;
+        float lenUnit = (float)((h >> 3) & 0x1Fu) / 31.0f;
+        int len = lerp(eventMinLen[kind], eventMaxLen[kind], lenUnit);
+        int start = dayBase + ts + offset;
+        if (m >= start && m < start + len) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Rebuild both bitmaps. Called once per simulated minute, not once per tick.
+void SceneEngine::evaluateEvents() {
+    memset(_eventOn, 0, sizeof(_eventOn));
+    memset(_eventOff, 0, sizeof(_eventOff));
+    _active = 0;
+
+    uint16_t count = Lamps.count();
+    int m = (int)_sim;
+
+    for (uint16_t lamp = 0; lamp < count; lamp++) {
+        uint8_t g = _lampGroup[lamp];
+        if (g == 0xFF) {
+            continue;
+        }
+        const GroupConfig &G = _cfg.groups[g];
+        uint8_t dayLevel = G.dayActivity > 3 ? 3 : G.dayActivity;
+        uint8_t nightLevel = G.nightActivity > 3 ? 3 : G.nightActivity;
+        if (dayLevel == 0 && nightLevel == 0) {
+            continue;                   // a street lamp has no life
+        }
+
+        bool flicker;
+        LampMoments mo;
+        uint16_t base = targetLevel(lamp, G, flicker, mo);
+
+        bool hit = false;
+        if (base) {
+            // Lit: someone can leave the room for a moment. Not during the
+            // morning light, which is a short errand already.
+            if (!mo.morningLit) {
+                hit = eventAt(lamp, m, _doy, EVENT_DIP, dipRate[dayLevel], 0, 0);
+                if (hit) {
+                    _eventOff[lamp >> 5] |= 1u << (lamp & 31);
+                }
+            }
+        } else {
+            // Dark: a wake-up inside the lamp's own night, a short light
+            // outside it. The night runs from the lamp's off moment to 05:30,
+            // or to the start of its morning light if that comes first.
+            int from = mo.off;
+            int to = 1440 + 330;
+            if (mo.morningApplies && mo.morningOn + 1440 < to) {
+                to = mo.morningOn + 1440;
+            }
+            bool night = (to > from) && inWindow(m, from, to);
+            if (night) {
+                hit = eventAt(lamp, m, _doy, EVENT_NIGHT, nightRate[nightLevel],
+                              from, to);
+            } else {
+                hit = eventAt(lamp, m, _doy, EVENT_DAY, dayRate[dayLevel], 0, 0);
+            }
+            if (hit) {
+                _eventOn[lamp >> 5] |= 1u << (lamp & 31);
+            }
+        }
+
+        if (hit) {
+            _active++;
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -283,6 +469,14 @@ void SceneEngine::tick() {
 
     updateClock(nowMs);
 
+    // The activity layer changes only when the simulated clock does, so it is
+    // worked out once a simulated minute rather than forty times a second.
+    if (_sim != _eventSim || _doy != _eventDoy) {
+        _eventSim = _sim;
+        _eventDoy = _doy;
+        evaluateEvents();
+    }
+
     bool flickerFrame = (nowMs - _lastFlickerMs) >= FLICKER_MS;
     if (flickerFrame) {
         _lastFlickerMs = nowMs;
@@ -300,7 +494,21 @@ void SceneEngine::tick() {
         const GroupConfig &G = _cfg.groups[g];
 
         bool flicker;
-        uint16_t base = targetLevel(lamp, G, flicker);
+        LampMoments moments;
+        uint16_t base = targetLevel(lamp, G, flicker, moments);
+
+        // The activity layer, decided above: a short light overrides the base
+        // to the group's level, a dip overrides it to dark. Neither flickers.
+        uint32_t word = lamp >> 5;
+        uint32_t bit = 1u << (lamp & 31);
+        if (_eventOn[word] & bit) {
+            base = (uint16_t)(G.level * 257);
+            flicker = false;
+        } else if (_eventOff[word] & bit) {
+            base = 0;
+            flicker = false;
+        }
+
         if (base) {
             lit++;
         }
@@ -309,8 +517,6 @@ void SceneEngine::tick() {
         if (flicker && base) {
             // A television: dim, restless, mostly blue but we only have one
             // channel, so restless will have to do.
-            uint32_t word = lamp >> 5;
-            uint32_t bit = 1u << (lamp & 31);
             if (flickerFrame || !(_flickerNext[word] & bit)) {
                 _rng ^= _rng << 13; _rng ^= _rng >> 17; _rng ^= _rng << 5;
                 uint32_t n = _rng & 0xFF;

@@ -15,3 +15,6 @@ build-erase/
 
 # Session scratch of the plan runner: ledgers, review packages, snapshots
 .superpowers/
+
+# Build stamp written by make on every compile
+BuildStamp.gen.h

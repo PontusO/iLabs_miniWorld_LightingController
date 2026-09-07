@@ -7,4 +7,4 @@
 #pragma once
 
 #define MINIWORLD_VERSION "0.1.0"
-#define MINIWORLD_BUILD   __DATE__ " " __TIME__
+#include "BuildStamp.gen.h"     // MINIWORLD_BUILD, written by make on every compile

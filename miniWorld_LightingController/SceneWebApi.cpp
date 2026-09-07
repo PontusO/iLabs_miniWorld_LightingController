@@ -37,6 +37,7 @@ void SceneWebApi::statusJson(String &body) {
     doc["clockValid"] = Scene.clockValid();
     doc["enabled"] = Scene.enabled();
     doc["lit"] = Scene.litCount();
+    doc["active"] = Scene.activeCount();
     doc["lamps"] = Lamps.count();
     doc["groups"] = Scene.config().groupCount;
 
@@ -145,6 +146,8 @@ int SceneWebApi::getPresets(String &body) {
         o["morning"] = G.morning;
         o["level"] = G.level;
         o["fadeMs"] = G.fadeMs;
+        o["dayActivity"] = G.dayActivity;
+        o["nightActivity"] = G.nightActivity;
     }
     body = "";
     serializeJson(doc, body);

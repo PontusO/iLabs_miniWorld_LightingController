@@ -48,42 +48,80 @@ CAPTIVE_PROBES = (
     "/redirect",
 )
 
+# dayActivity 0 none, 1 low, 2 normal, 3 high; nightActivity 0 none, 1 rare,
+# 2 normal, 3 often. The four households (family, elderly, nightowl, away)
+# follow Behaviour in the firmware, which numbers them after allnight.
 BEHAVIOUR_PRESETS = {
     "street": {
         "onAnchor": "dusk", "on": (-10, 5),
         "offAnchor": "dawn", "off": (-5, 15),
         "litPercent": 100, "flickerPercent": 0, "morning": False,
         "level": 255, "fadeMs": 4000,
+        "dayActivity": 0, "nightActivity": 0,
     },
     "home": {
         "onAnchor": "dusk", "on": (0, 240),
         "offAnchor": "clock", "off": (1320, 1470),
         "litPercent": 85, "flickerPercent": 12, "morning": True,
         "level": 200, "fadeMs": 300,
+        "dayActivity": 2, "nightActivity": 1,
     },
     "shop": {
         "onAnchor": "clock", "on": (510, 540),
         "offAnchor": "clock", "off": (1080, 1110),
         "litPercent": 100, "flickerPercent": 0, "morning": False,
         "level": 230, "fadeMs": 200,
+        "dayActivity": 1, "nightActivity": 0,
     },
     "late": {
         "onAnchor": "dusk", "on": (-30, 30),
         "offAnchor": "clock", "off": (1380, 1560),
         "litPercent": 100, "flickerPercent": 0, "morning": False,
         "level": 220, "fadeMs": 800,
+        "dayActivity": 1, "nightActivity": 0,
     },
     "allnight": {
         "onAnchor": "dusk", "on": (-15, 0),
         "offAnchor": "dawn", "off": (0, 15),
         "litPercent": 100, "flickerPercent": 0, "morning": False,
         "level": 255, "fadeMs": 800,
+        "dayActivity": 0, "nightActivity": 0,
+    },
+    "family": {
+        "onAnchor": "dusk", "on": (0, 180),
+        "offAnchor": "clock", "off": (1350, 1440),
+        "litPercent": 90, "flickerPercent": 25, "morning": True,
+        "level": 210, "fadeMs": 300,
+        "dayActivity": 3, "nightActivity": 1,
+    },
+    "elderly": {
+        "onAnchor": "dusk", "on": (-30, 60),
+        "offAnchor": "clock", "off": (1260, 1335),
+        "litPercent": 90, "flickerPercent": 8, "morning": True,
+        "level": 180, "fadeMs": 400,
+        "dayActivity": 2, "nightActivity": 3,
+    },
+    "nightowl": {
+        "onAnchor": "dusk", "on": (60, 240),
+        "offAnchor": "clock", "off": (1470, 1590),
+        "litPercent": 80, "flickerPercent": 30, "morning": False,
+        "level": 200, "fadeMs": 300,
+        "dayActivity": 1, "nightActivity": 1,
+    },
+    # A timer lamp: one in four, the same minutes every evening, no life.
+    "away": {
+        "onAnchor": "clock", "on": (1140, 1150),
+        "offAnchor": "clock", "off": (1350, 1360),
+        "litPercent": 25, "flickerPercent": 0, "morning": False,
+        "level": 200, "fadeMs": 0,
+        "dayActivity": 0, "nightActivity": 0,
     },
     "off": {
         "onAnchor": "clock", "on": (0, 0),
         "offAnchor": "clock", "off": (0, 0),
         "litPercent": 0, "flickerPercent": 0, "morning": False,
         "level": 0, "fadeMs": 800,
+        "dayActivity": 0, "nightActivity": 0,
     },
 }
 
@@ -291,6 +329,8 @@ def group_to_json(g):
         "morning": g["morning"],
         "level": g["level"],
         "fadeMs": g["fadeMs"],
+        "dayActivity": g["dayActivity"],
+        "nightActivity": g["nightActivity"],
     }
 
 
@@ -319,6 +359,12 @@ def group_from_json(o):
             g[key] = o[key]
     if isinstance(o.get("morning"), bool):
         g["morning"] = o["morning"]
+    # Absent means the preset's value, the way SceneConfig::fromJson reads a
+    # scene written before the activity layer existed. clamp() caps both at 3.
+    for key in ("dayActivity", "nightActivity"):
+        v = o.get(key)
+        if isinstance(v, int) and not isinstance(v, bool):
+            g[key] = max(0, min(3, v))
     return g
 
 
@@ -420,6 +466,19 @@ class SceneState:
         # "<lit> of <lamps> lit" and must never show more than the total.
         return min(lit, LAMPS.lamp_count())
 
+    def active_count_at(self, minutes):
+        # Lamps in a short event right now. The engine counts them for real;
+        # the mock only has to be plausible and steady from minute to minute:
+        # nothing between 23:00 and 05:30, one to three the rest of the day.
+        if not self.enabled:
+            return 0
+        m = int(minutes) % 1440
+        if m >= 23 * 60 or m < 5 * 60 + 30:
+            return 0
+        h = (m * 2654435761) & 0xFFFFFFFF
+        h ^= h >> 15
+        return 1 + h % 3
+
     def config_json(self):
         with self.lock:
             return {
@@ -459,6 +518,7 @@ class SceneState:
                 "clockValid": True,
                 "enabled": self.enabled,
                 "lit": self.lit_count_at(minutes, dusk, dawn),
+                "active": self.active_count_at(minutes),
                 "lamps": LAMPS.lamp_count(),
                 "groups": len(self.groups),
             }
@@ -592,7 +652,8 @@ class SceneState:
 
     def presets_json(self):
         out = {}
-        for name in ("street", "home", "shop", "late", "allnight"):
+        for name in ("street", "home", "shop", "late", "allnight",
+                     "family", "elderly", "nightowl", "away"):
             p = BEHAVIOUR_PRESETS[name]
             out[name] = {
                 "onAnchor": p["onAnchor"],
@@ -604,6 +665,8 @@ class SceneState:
                 "morning": p["morning"],
                 "level": p["level"],
                 "fadeMs": p["fadeMs"],
+                "dayActivity": p["dayActivity"],
+                "nightActivity": p["nightActivity"],
             }
         return out
 

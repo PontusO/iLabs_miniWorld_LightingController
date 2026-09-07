@@ -8,12 +8,30 @@
     "use strict";
 
     var el = App.el;
-    var BEHAVIOURS = ["off", "street", "home", "shop", "late", "allnight"];
+    // Households first, then the fixtures, then Off: the order a town is
+    // built in, not the order the firmware numbers them in.
+    var BEHAVIOURS = ["home", "family", "elderly", "nightowl", "away",
+                      "shop", "late", "street", "allnight", "off"];
+    var BEH_LABELS = {
+        home: "Home", family: "Family", elderly: "Elderly couple",
+        nightowl: "Night owl", away: "Away", shop: "Shop", late: "Pub, late",
+        street: "Street", allnight: "All night", off: "Off"
+    };
     var ANCHORS = ["dusk", "dawn", "clock"];
     var MONTHS = "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split(" ");
     var CUM = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
     var PRESET_KEYS = ["onAnchor", "on", "offAnchor", "off", "litPercent",
-                       "flickerPercent", "morning", "level", "fadeMs"];
+                       "flickerPercent", "morning", "level", "fadeMs",
+                       "dayActivity", "nightActivity"];
+    var LEVELS = [0, 1, 2, 3];
+    var DAY_WORDS = ["None", "Low", "Normal", "High"];
+    var NIGHT_WORDS = ["None", "Rare", "Normal", "Often"];
+    // Short lights a day per lamp: the engine's day rate at w = 1
+    // (0, 0.15, 0.35, 0.70 per hour) times eight, rounded.
+    var DAY_COUNT = [0, 1, 3, 6];
+    // Wake-ups a night: 0, 0.4, 0.8 and 1.6 expected, said in words.
+    var NIGHT_TEXT = ["no wake-ups", "a wake-up every 2 nights",
+                      "a wake-up every night", "1 or 2 a night"];
     // Override fields: key, label, kind (a anchor, w window end, n number).
     var OVR = [["onAnchor", "On anchor", "a"], ["on0", "On from", "w"],
                ["on1", "On to", "w"], ["offAnchor", "Off anchor", "a"],
@@ -36,8 +54,21 @@
     var u = {};         // the nodes poll() updates in place
 
     function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
-    function behLabel(b) { return b === "allnight" ? "All night" : cap(b); }
+    // A behaviour the device knows and this page does not still reads as
+    // something, so an older GUI against a newer firmware is not blank.
+    function behLabel(b) { return BEH_LABELS[b] || cap(b); }
     function pct(minutes) { return (minutes / 1440) * 100; }
+
+    function lvl(v) { return Math.max(0, Math.min(3, v | 0)); }
+
+    // The two levels in plain words, so nobody has to think in rates.
+    function activityText(day, night) {
+        var n = DAY_COUNT[day];
+        return (day ? "about " + n + " short light" + (n === 1 ? "" : "s")
+                        + " a day per lamp"
+                    : "No daytime activity")
+            + ", " + NIGHT_TEXT[night];
+    }
 
     function t2m(text) {
         var p = /^(\d+):(\d+)$/.exec(String(text || ""));
@@ -372,6 +403,35 @@
         });
         grid.appendChild(fld("Morning", swtch(f.morning)));
 
+        // The life on top of the base state: two levels and one line that
+        // says what they mean, so the rates stay out of the GUI.
+        g.dayActivity = lvl(g.dayActivity);
+        g.nightActivity = lvl(g.nightActivity);
+        var line = el("p", { class: "aline" }, "");
+        function syncAct() {
+            f.dayActivity.value = g.dayActivity;
+            f.nightActivity.value = g.nightActivity;
+            line.textContent = activityText(g.dayActivity, g.nightActivity);
+        }
+        function actSel(key, words) {
+            return sel(LEVELS, g[key],
+                function (v) { return words[v]; },
+                function (ev) {
+                    g[key] = lvl(parseInt(ev.target.value, 10));
+                    syncAct();
+                    touch();
+                });
+        }
+        f.dayActivity = actSel("dayActivity", DAY_WORDS);
+        f.nightActivity = actSel("nightActivity", NIGHT_WORDS);
+        var act = el("div", { class: "act" },
+            el("h3", null, "Activity"),
+            el("div", { class: "gg pair" },
+                fld("Daytime", f.dayActivity),
+                fld("Night wake-ups", f.nightActivity)),
+            line);
+        syncAct();
+
         var del = el("button", { type: "button", class: "btn danger" }, "Delete group");
         del.addEventListener("click", function () {
             if (!del.armed) {
@@ -407,6 +467,9 @@
                         applyPreset(g, p);
                         OVR.forEach(function (o) { f[o[0]].value = getf(g, o[0]); });
                         f.morning.checked = g.morning;
+                        g.dayActivity = lvl(g.dayActivity);
+                        g.nightActivity = lvl(g.nightActivity);
+                        syncAct();
                         App.toast("Preset applied", "info");
                     }
                     touch();
@@ -441,7 +504,7 @@
                     touch();
                 }
             })),
-            err, grid, del);
+            err, grid, act, del);
     }
 
     function renderGroups() {

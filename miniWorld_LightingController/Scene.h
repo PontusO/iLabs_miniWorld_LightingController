@@ -18,8 +18,11 @@
         "seed": 1,                               changes everyone's habits
         "groups": [
           { "name": "Main street",
-            "behaviour": "street" | "home" | "shop" | "late" | "allnight" | "off",
+            "behaviour": "street" | "home" | "shop" | "late" | "allnight" |
+                         "family" | "elderly" | "nightowl" | "away" | "off",
             "lamps": [0, 1, "4-15", 20],
+            "dayActivity": 0..3,       short lights and dips through the day
+            "nightActivity": 0..3,     wake-ups through the night
             ...optional overrides, see GroupConfig...
           }
         ]
@@ -30,6 +33,12 @@
     anchored to dusk or dawn are offsets from that event; windows anchored
     to the clock are absolute minutes since midnight and may exceed 1440 to
     mean "past midnight".
+
+    dayActivity and nightActivity are the "life" layer: how often a lamp pops
+    on for a few minutes during the day, dips off for a moment while it is
+    lit, and wakes up in the night. An absent key takes the value the
+    behaviour's preset gives, so a scene written before the layer existed
+    loads with the life its buildings would have had.
 
     Invector Embedded Systems AB
 */
@@ -49,6 +58,10 @@ enum class Behaviour : uint8_t {
     Shop,           // lit during opening hours
     Late,           // pub, restaurant: on at dusk, off in the small hours
     AllNight,       // on at dusk, off at dawn, always participates
+    Family,         // household: late bedtime, television, busy days
+    Elderly,        // household: early bedtime, quiet days, restless nights
+    NightOwl,       // household: up past midnight, no morning light
+    Away,           // timer lamp: the same two moments every evening, no life
     COUNT
 };
 
@@ -72,6 +85,9 @@ struct GroupConfig {
     bool morning;               // lights before dawn on winter mornings
     uint8_t level;              // brightness when lit, 0..255
     uint16_t fadeMs;            // real-time fade, 0 = instant
+
+    uint8_t dayActivity;        // daytime lights and dips: 0 none, 1 low, 2 normal, 3 high
+    uint8_t nightActivity;      // night wake-ups: 0 none, 1 rare, 2 normal, 3 often
 
     uint8_t lampBits[LAMPS_MAX_LAMPS / 8];
 

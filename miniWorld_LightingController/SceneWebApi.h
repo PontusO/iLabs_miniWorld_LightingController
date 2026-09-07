@@ -20,7 +20,10 @@
       { "time": "19:42", "minutes": 1182, "dayOfYear": 249,
         "dusk": "19:58", "dawn": "05:47", "sunset": "19:21", "sunrise": "06:24",
         "mode": "real", "clockValid": true, "enabled": true,
-        "lit": 61, "lamps": 144, "groups": 5 }
+        "lit": 61, "active": 2, "lamps": 144, "groups": 5 }
+
+    "active" is the number of lamps currently inside a short activity event:
+    a daytime light, an evening dip or a night wake-up.
 
     Invector Embedded Systems AB
 */

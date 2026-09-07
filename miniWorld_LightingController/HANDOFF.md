@@ -37,7 +37,7 @@ UART pins are used as an I2C bus.
   NetWebApi               /api/net/*
   SystemWebApi            /api/system/*
   ───────────────────────────────────────────────────────────────
-  SceneEngine             clock modes, per-lamp habits, fades, flicker
+  SceneEngine             clock modes, habits, fades, flicker, events (day lights, dips, night wake-ups)
   Scene / Sun             scene data model + JSON, solar calculation
   SceneWebApi             /api/scene/*
   ───────────────────────────────────────────────────────────────
@@ -75,8 +75,8 @@ it, and every web API stays a pure `(method, path, body)` function.
 | `LampWebApi.h/.cpp` | `/api/lamps/config, status, probe, test` | Per-bus status object done, checked against the mock |
 | `RgbLamps.h` | `setColor(module, r, g, b)` over Lamps | Done |
 | `Sun.h/.cpp` | Sunrise/sunset/civil twilight | **Verified** against Lund almanac |
-| `Scene.h/.cpp` | Groups, behaviours, clock, location, JSON | Done |
-| `SceneEngine.h/.cpp` | The simulation | Compiles, untested |
+| `Scene.h/.cpp` | Groups, behaviours (incl. the four household presets), clock, location, JSON | Done |
+| `SceneEngine.h/.cpp` | The simulation, plus the event layer (day lights, dips, night wake-ups) | Compiles, reviewed, not yet run on hardware |
 | `SceneWebApi.h/.cpp` | `/api/scene/config, status, clock, presets` | Done |
 | `NetConfig.h/.cpp` | `/net.json`: credentials, hostname, GUI password, NTP, TZ | Compiles, reviewed |
 | `NetDefaults.h` | Compile-time default network for a board with no `/net.json`; gitignored, copy `NetDefaults.example.h` | Done |
@@ -239,6 +239,17 @@ real network, `http://miniworld.local/`, basic auth, and a reboot coming
 straight back Online. The two entries added to section 6 below are what
 that run confirms or refutes.
 
+### 5.6 Scene activity on the board
+
+Open. Needs a flashed board, no phone or extra hardware.
+
+1. Set a group to Elderly, switch the clock to Manual and scrub through
+   02:00..05:00 in one-minute steps: some lamps of that group must show
+   one to four minute lights that are stable when scrubbing back.
+2. Scrub through 07:00..09:00: short lights on the lamps that are off.
+3. Switch to Accelerated at 20 minutes per day and watch Home's lit
+   count move outside dusk and dawn.
+
 ## 6. Things that were not verified and must be
 
 - **AL5887 register map.** Everything part-specific is in the define
@@ -269,6 +280,11 @@ that run confirms or refutes.
   is what makes the 20 kB page arrive in well under a second, but the
   link has never actually run at it here. Watch the boot log for
   `net: esp link 921600` and for garbled AT traffic under load.
+- **No civil dusk at 55.7 N around midsummer.** The engine falls back to
+  23:00. A clock-anchored off earlier than that wraps, so the lamp reads
+  lit for about 22 hours. Pre-existing, now visible because the activity
+  layer inherits it. Needs a decision: clamp the fallback, or anchor
+  summer behaviour to sunset.
 
 ## 7. Conventions
 
@@ -310,3 +326,9 @@ that run confirms or refutes.
   `pio_i2c.c`, which was not available when the wrapper was written.
   Shipping a guessed encoding was worse than shipping a documented
   limitation.
+- **Why events come from a hash per five-minute slot.** The town must
+  look the same when scrubbed back and forth and the same in accelerated
+  and real time, so an event's presence and length are derived from
+  `(seed, lamp, day, slot)` rather than rolled from a running random
+  generator. The result is evaluated once per simulated minute into two
+  bitmaps, so the 40 Hz tick only tests bits.
