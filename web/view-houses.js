@@ -140,9 +140,12 @@
         return (f && f.name) || "another flat";
     }
 
-    // One pass over every flat. Out of range and a repeat inside one flat
-    // are errors and hold Save; a lamp two flats both claim is only a
-    // warning, since the first flat listing it is the one that gets it.
+    // One pass over every flat. A lamp number the controller can never
+    // have (below 0 or above 2047) and a repeat inside one flat are errors
+    // and hold Save. A lamp beyond what is fitted today is only a warning:
+    // a house is often wired before its driver board is, and the flat
+    // must stay editable and deletable meanwhile. A lamp two flats both
+    // claim is a warning too, since the first flat listing it gets it.
     function check() {
         errs = [];
         warns = [];
@@ -159,12 +162,13 @@
             f.rooms.forEach(function (r) {
                 var n = r.lamp;
                 var also = users[n] || [];
-                if (!err && (typeof n !== "number" || n < 0
-                        || (lampMax && n >= lampMax))) {
-                    err = "Lamp " + n + " is outside 0 to "
-                        + (lampMax ? lampMax - 1 : 0) + ".";
+                if (!err && (typeof n !== "number" || n < 0 || n > 2047)) {
+                    err = "Lamp " + n + " is outside 0 to 2047.";
                 } else if (!err && seen[n]) {
                     err = "Lamp " + n + " is in this flat twice.";
+                } else if (!warn && lampMax && n >= lampMax) {
+                    warn = "Lamp " + n + " is beyond the " + lampMax
+                        + " lamps fitted; it lights once that hardware is added.";
                 } else if (!warn && also.length > 1) {
                     warn = also[0] === i
                         ? "Lamp " + n + " is in " + flatName(also[1])
