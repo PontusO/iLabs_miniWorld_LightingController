@@ -45,8 +45,11 @@ version=$(sed -n 's/^#define MINIWORLD_VERSION *"\([^"]*\)".*/\1/p' "$here/miniW
 strings "$elf" > "$dir/.strings" || fail "strings failed on $elf"
 grep -q 'miniWorld lighting controller %s (%s)' "$dir/.strings" || fail "image lacks the firmware banner: not this sketch"
 grep -qx "$version" "$dir/.strings" || fail "image lacks version string $version"
-stamp=$(grep -E '^[A-Z][a-z]{2} [ 0-9][0-9] [0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2}$' "$dir/.strings" | head -1)
-[ -n "$stamp" ] || fail "image lacks a build stamp"
+# __TIME__ expands per translation unit, so a build carries a few stamps a
+# second apart. Keep them all; the banner must match one of them.
+stamps=$(grep -E '^[A-Z][a-z]{2} [ 0-9][0-9] [0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2}$' "$dir/.strings" | sort -u)
+[ -n "$stamps" ] || fail "image lacks a build stamp"
+stamp=$(echo "$stamps" | head -1)
 
 size=$(stat -c %s "$uf2")
 [ "$size" -ge 400000 ] || fail "image is only $size bytes; a build of this sketch is above 400000"
@@ -57,4 +60,4 @@ if [ -n "$marker" ]; then
 fi
 
 echo "checkimage: ok, $size bytes, version $version, build $stamp${marker:+, marker present}"
-echo "$stamp" > "$dir/.stamp"
+echo "$stamps" > "$dir/.stamp"

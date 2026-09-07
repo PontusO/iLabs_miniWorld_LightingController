@@ -29,7 +29,7 @@ fqbn=${FQBN:-rp2040:rp2040:challenger_nb_2040_wifi:flash=8388608_1048576}
 fail() { echo "flash: $*" >&2; exit 1; }
 
 "$here/tools/checkimage.sh" "$dir" "$marker" || exit 1
-stamp=$(cat "$dir/.stamp")
+stamp=$(head -1 "$dir/.stamp")
 
 if [ -z "$target" ]; then
     found=$("$here/tools/findboard.sh") || exit 1
@@ -60,34 +60,75 @@ fi
 echo "flash: waiting for the board to come back and print its banner"
 port=""
 i=0
-while [ $i -lt 30 ]; do
+while [ $i -lt 300 ]; do
     found=$("$here/tools/findboard.sh" 2>/dev/null) && case "$found" in serial*) port=${found#* }; break;; esac
-    sleep 1; i=$((i+1))
+    sleep 0.1; i=$((i+1))
 done
 [ -n "$port" ] || fail "board did not re-enumerate as a serial device within 30 s"
 
-banner=$(python3 - "$port" <<'PY'
+# Read the banner, then keep listening for the network state so the
+# address ends up in the make output. Stops at "net: online" or "net:
+# portal", or after 45 s.
+log=$(python3 - "$port" <<'PY'
 import serial, sys, time
 port = sys.argv[1]
-end = time.time() + 30
+end = time.time() + 45
 buf = b""
+seen_banner = False
 while time.time() < end:
     try:
         with serial.Serial(port, 115200, timeout=0.5) as s:
             s.dtr = True; s.rts = True
             while time.time() < end:
                 buf += s.read(4096)
-                if b"miniWorld lighting controller" in buf:
-                    line = [l for l in buf.decode("ascii", "replace").splitlines() if "miniWorld lighting controller" in l]
-                    if line:
-                        print(line[0]); sys.exit(0)
+                text = buf.decode("ascii", "replace")
+                if "miniWorld lighting controller" in text:
+                    seen_banner = True
+                if seen_banner and ("net: online" in text or "net: portal" in text or "net: nomodule" in text):
+                    break
     except Exception:
         time.sleep(0.5)
-sys.exit(1)
+sys.stdout.write(buf.decode("ascii", "replace"))
+sys.exit(0 if seen_banner else 1)
 PY
-) || fail "no boot banner on $port within 30 s; the image may not be running"
+) || true
 
-case "$banner" in
-    *"($stamp)"*) echo "flash: verified, board runs build $stamp";;
-    *) fail "banner '$banner' does not carry build stamp '$stamp': the board is not running this image";;
-esac
+banner=$(printf '%s\n' "$log" | grep 'miniWorld lighting controller' | head -1)
+printf '%s\n' "$log" | grep -E '^(miniWorld|lamps|scene|net|http):' | sed 's/^/flash: board says: /'
+ok=0
+if [ -n "$banner" ]; then
+    while read -r st; do
+        case "$banner" in *"($st)"*) ok=1;; esac
+    done < "$dir/.stamp"
+    [ "$ok" -eq 1 ] || fail "banner '$banner' matches none of the image's build stamps: the board is not running this image"
+    echo "flash: verified through the console, board runs this image"
+else
+    # The banner is printed 1.5 s after boot and USB CDC drops output while
+    # no host listens, so it can be missed. Fall back to the API, which
+    # reports the same build stamp, once the board says where it is.
+    ip=$(printf '%s\n' "$log" | sed -n 's/^net: online [^ ]* \([0-9.]*\).*/\1/p' | tail -1)
+    [ -n "$ip" ] || ip=$(python3 - "$port" <<'PY'
+import serial, sys, time, re
+end = time.time() + 40
+buf = b""
+try:
+    with serial.Serial(sys.argv[1], 115200, timeout=0.5) as s:
+        s.dtr = True; s.rts = True
+        while time.time() < end:
+            buf += s.read(4096)
+            m = re.search(rb"net: online \S+ ([0-9.]+)", buf)
+            if m:
+                print(m.group(1).decode()); break
+except Exception:
+    pass
+PY
+)
+    [ -n "$ip" ] || fail "no boot banner and no 'net: online' line on $port; cannot verify what the board runs"
+    build=$(curl -s -m 8 "http://$ip/api/system/status" | sed -n 's/.*"build":"\([^"]*\)".*/\1/p')
+    [ -n "$build" ] || fail "board is at $ip but /api/system/status did not answer; cannot verify"
+    while read -r st; do
+        [ "$build" = "$st" ] && ok=1
+    done < "$dir/.stamp"
+    [ "$ok" -eq 1 ] || fail "board at $ip reports build '$build', not this image's"
+    echo "flash: verified through the API at $ip, board runs this image (build $build)"
+fi
