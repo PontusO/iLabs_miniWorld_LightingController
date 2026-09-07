@@ -140,6 +140,34 @@ int SceneWebApi::putClock(const String &in, String &body) {
     return 200;
 }
 
+int SceneWebApi::postIdentify(const String &in, String &body) {
+    JsonDocument doc;
+    if (deserializeJson(doc, in)) {
+        return error(400, "invalid JSON", body);
+    }
+
+    uint16_t count = Lamps.count();
+    int lamp = doc["lamp"].is<int>() ? (int)doc["lamp"] : -1;
+    if (lamp < 0 || lamp >= (int)count) {
+        if (count == 0) {
+            return error(400, "no lamps are fitted", body);
+        }
+        char msg[32];
+        snprintf(msg, sizeof(msg), "lamp must be 0..%d", (int)count - 1);
+        return error(400, msg, body);
+    }
+
+    // Returns at once: the blink is five phases of tick(), not a wait here.
+    Scene.identify((uint16_t)lamp);
+
+    JsonDocument out;
+    out["ok"] = true;
+    out["lamp"] = lamp;
+    body = "";
+    serializeJson(out, body);
+    return 200;
+}
+
 int SceneWebApi::getPresets(String &body) {
     JsonDocument doc;
     for (uint8_t i = 1; i < (uint8_t)Behaviour::COUNT; i++) {
@@ -223,6 +251,10 @@ int SceneWebApi::handle(const String &method, const String &path,
     }
     if (path == "/api/scene/clock") {
         if (method == "PUT" || method == "POST") return putClock(requestBody, body);
+        return error(405, "method not allowed", body);
+    }
+    if (path == "/api/scene/identify") {
+        if (method == "POST") return postIdentify(requestBody, body);
         return error(405, "method not allowed", body);
     }
     if (path == "/api/scene/presets") {

@@ -1276,6 +1276,22 @@ class Handler(BaseHTTPRequestHandler):
 
         self._send_json({"error": "not found"}, 404)
 
+    # There is no lamp to blink here, so the mock does what the firmware
+    # does apart from the light itself: it checks the number and says so on
+    # stderr, which is enough to watch the GUI's debounce from the log.
+    def _identify(self, data):
+        if not isinstance(data, dict):
+            raise ApiError(400, "invalid JSON")
+        count = LAMPS.lamp_count()
+        lamp = data.get("lamp")
+        if not isinstance(lamp, int) or isinstance(lamp, bool) \
+                or lamp < 0 or lamp >= count:
+            if count == 0:
+                raise ApiError(400, "no lamps are fitted")
+            raise ApiError(400, "lamp must be 0..%d" % (count - 1))
+        sys.stderr.write("mock: identify lamp %d\n" % lamp)
+        return {"ok": True, "lamp": lamp}
+
     def _api(self, method, path, data):
         if path == "/api/lamps/config":
             if method == "GET":
@@ -1317,6 +1333,11 @@ class Handler(BaseHTTPRequestHandler):
             if method in ("PUT", "POST"):
                 SCENE.apply_clock(data or {})
                 return 200, SCENE.status_json()
+            raise ApiError(405, "method not allowed")
+
+        if path == "/api/scene/identify":
+            if method == "POST":
+                return 200, self._identify(data or {})
             raise ApiError(405, "method not allowed")
 
         if path == "/api/scene/presets":

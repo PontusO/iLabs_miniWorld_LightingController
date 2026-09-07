@@ -77,7 +77,7 @@ it, and every web API stays a pure `(method, path, body)` function.
 | `Sun.h/.cpp` | Sunrise/sunset/civil twilight | **Verified** against Lund almanac |
 | `Scene.h/.cpp` | Groups, behaviours (incl. the four household presets), flats (households with rooms), clock, location, JSON | Compiles, reviewed, not yet run on hardware |
 | `SceneEngine.h/.cpp` | The simulation, plus the event layer (day lights, dips, night wake-ups) and `evaluateFlats()` for the flats' rooms | Compiles, reviewed, not yet run on hardware |
-| `SceneWebApi.h/.cpp` | `/api/scene/config, status, clock, presets` | Done |
+| `SceneWebApi.h/.cpp` | `/api/scene/config, status, clock, identify, presets`; `identify` blinks one lamp so it can be found on the layout | Done |
 | `NetConfig.h/.cpp` | `/net.json`: credentials, hostname, GUI password, NTP, TZ | Compiles, reviewed |
 | `NetDefaults.h` | Compile-time default network for a board with no `/net.json`; gitignored, copy `NetDefaults.example.h` | Done |
 | `NetManager.h/.cpp` | WiFi state machine, portal AP, SNTP, mDNS, global `Net` | Compiles, reviewed, not yet on a phone |

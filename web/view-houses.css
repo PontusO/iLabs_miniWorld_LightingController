@@ -302,12 +302,54 @@
 }
 
 /* Rooms: a lamp number, what the room is, and a way to drop the row. */
+/* Lamp, room kind, remove. The lamp column is the stepper, which is two
+   44 px targets and a field of four digits, so it is fixed and the kind
+   takes what is left. minmax(0, 1fr) rather than 1fr: a select is wider
+   than its box wants to be, and without it the longest room name would
+   push the remove button off the right of a 390 px screen. */
 .view-houses .rhead,
 .view-houses .rrow {
     display: grid;
-    grid-template-columns: 92px 1fr 44px;
-    gap: 8px;
+    grid-template-columns: 148px minmax(0, 1fr) 44px;
+    gap: 6px;
     align-items: center;
+}
+
+/* Down, the number, up. The buttons keep their 44 px whatever is left. */
+.view-houses .step {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr) 44px;
+    gap: 4px;
+    align-items: center;
+}
+
+.view-houses .stepb {
+    min-width: 44px;
+    min-height: 44px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    font-size: 1.1em;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.view-houses .stepb:hover { border-color: var(--accent); color: var(--accent); }
+
+/* The two buttons are the spinner, so the browser's own is in the way. */
+.view-houses .step input[type="number"] {
+    padding: 8px 2px;
+    text-align: center;
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+
+.view-houses .step input::-webkit-outer-spin-button,
+.view-houses .step input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
 }
 
 .view-houses .rhead {
@@ -318,6 +360,27 @@
 
 .view-houses .rtable { margin-bottom: 10px; }
 .view-houses .rrow { margin-bottom: 8px; }
+
+/* Narrower than a phone in portrait the stepper and a readable room kind
+   do not fit on one line, so the stepper takes a line of its own and the
+   kind and the remove button sit under it. The column heads go: every
+   control names itself to a screen reader anyway. */
+@media (max-width: 359px) {
+    .view-houses .rhead { display: none; }
+
+    .view-houses .rrow {
+        grid-template-columns: minmax(0, 1fr) 44px;
+        row-gap: 4px;
+    }
+
+    /* On its own line the field would stretch to the width of the card,
+       which reads as a text box and not as a number being stepped. */
+    .view-houses .rrow .step {
+        grid-column: 1 / -1;
+        grid-template-columns: 44px 76px 44px;
+        justify-content: start;
+    }
+}
 
 .view-houses .rrow input,
 .view-houses .rrow select,
@@ -346,6 +409,10 @@
 }
 
 .view-houses .rdel:hover { color: var(--fault); border-color: var(--fault); }
+
+/* Sits between the table and Add room, so it reads as a note on the
+   steppers above it rather than on the button below. */
+.view-houses .rhint { margin: 0 0 10px 0; }
 
 .view-houses .rooms-add { margin-bottom: 4px; }
 

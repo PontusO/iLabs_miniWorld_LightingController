@@ -27,6 +27,12 @@
     as the events, and a lamp that a flat lists is owned by the flat: its
     entry in _lampGroup is cleared, so the group path never sees it.
 
+    Alongside the simulation sits identify(): a lamp asked for by the GUI
+    blinks for a second and a quarter so it can be found on the layout. The
+    blink runs through the engine rather than around it, so the scene never
+    fights it: tick() steps the phases and skips that lamp in the per-lamp
+    loop while it blinks.
+
     Call tick() from loop() as often as you like; it rate-limits itself.
 
     Invector Embedded Systems AB
@@ -83,6 +89,15 @@ public:
     // Pause the engine without losing state. Lamps keep their last level.
     void setEnabled(bool on) { _enabled = on; }
     bool enabled() const { return _enabled; }
+
+    // Blink one lamp so it can be found on the layout: five phases of
+    // 250 ms, on, off, on, off, on, and then the lamp goes back to what it
+    // was. Nothing here waits: tick() drives the phases from millis(), and
+    // it drives them whether or not the engine is enabled, so a lamp can be
+    // found with the scene paused. One lamp at a time; a second call gives
+    // the first lamp back at once and starts over with the new one. A lamp
+    // outside the fitted range is ignored.
+    void identify(uint16_t lamp);
 
     // Clock control that does not touch flash. Used by the scrubber.
     void setMode(ClockMode m);
@@ -155,6 +170,14 @@ private:
     void evaluateFlats();
     void evaluateFlatEvents(int m);
 
+    // The identify blink, one phase at a time. Writes to the lamp only when
+    // the phase changes, so calling it from every loop() costs a compare.
+    void driveIdentify(uint32_t nowMs);
+    // Stop blinking: the lamp gets the level it had back and the scene
+    // carries on fading it from there. A lamp that is no longer fitted is
+    // simply let go.
+    void releaseIdentify();
+
     SceneConfig _cfg;
     bool _enabled = true;
 
@@ -179,6 +202,11 @@ private:
     uint16_t _active = 0;
     uint16_t _eventSim = 0xFFFF;    // simulated minute the bitmaps were built for
     uint16_t _eventDoy = 0;
+
+    uint16_t _identLamp = 0xFFFF;   // lamp being blinked, 0xFFFF for none
+    uint32_t _identStart = 0;       // millis() the blink started at
+    uint16_t _identSaved = 0;       // the level to give back when it ends
+    uint8_t _identPhase = 0xFF;     // phase last written, 0xFF = none yet
 
     uint32_t _startMs = 0;          // accelerated: when the sim day started
     uint32_t _lastTickMs = 0;

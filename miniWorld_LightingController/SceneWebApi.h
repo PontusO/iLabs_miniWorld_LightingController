@@ -12,6 +12,10 @@
                                 { "dayOfYear": 355 }
                                 { "enabled": false }
                                 Any subset. Add "persist": true to keep it.
+      POST /api/scene/identify  { "lamp": n } blinks that lamp for a second
+                                and a quarter so it can be found on the
+                                layout, then gives it back to the scene.
+                                Returns { "ok": true, "lamp": n }.
       GET  /api/scene/presets   default parameters per behaviour, for the
                                 group editor in the GUI, plus "households"
                                 (the rhythm per household type, no entry for
@@ -54,6 +58,7 @@ private:
     static int putConfig(const String &in, String &body);
     static int getStatus(String &body);
     static int putClock(const String &in, String &body);
+    static int postIdentify(const String &in, String &body);
     static int getPresets(String &body);
     static void statusJson(String &body);
     static int error(int code, const char *msg, String &body);

@@ -75,6 +75,7 @@ check GET  /api/scene/config  200
 check PUT  /api/scene/config  200 "$(fetch /api/scene/config)"
 check GET  /api/scene/status  200
 check PUT  /api/scene/clock   200 '{"mode":"manual","time":"19:40"}'
+check POST /api/scene/identify 200 '{"lamp":0}'
 check GET  /api/scene/presets 200
 check GET  /api/net/status    200
 check GET  /api/net/scan      200

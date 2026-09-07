@@ -52,7 +52,7 @@ PIO_HDR     := $(PIO_SRC:.pio=.pio.h)
 
 # The directory itself is a dependency so that deleting a view file also
 # rebuilds the header; a wildcard alone only sees the survivors.
-WEB_SRC     := $(wildcard web/*.html web/*.css web/*.js) web
+WEB_SRC     := $(wildcard web/*.html web/*.css web/*.js) web/.
 WEB_HDR     := $(SKETCH)/WebUI.gen.h
 
 BUILD_PATH  ?= $(CURDIR)/build

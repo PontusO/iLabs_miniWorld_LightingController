@@ -13,6 +13,8 @@
 #define TICK_MS         25          // 40 Hz is plenty for fades
 #define FLICKER_MS      110         // television "frame" rate
 #define JITTER_FRACTION 0.15f       // daily wobble as a fraction of the window
+#define IDENT_MS        250         // one phase of the identify blink
+#define IDENT_PHASES    5           // on, off, on, off, on
 
 SceneEngine Scene;
 
@@ -44,6 +46,14 @@ bool SceneEngine::apply(const SceneConfig &in, bool persist) {
 }
 
 void SceneEngine::rebuild() {
+    // A new scene ends a blink in progress. The lamp is given its level
+    // back if it is still fitted, and simply let go if it is not, which is
+    // what releaseIdentify() already tests for: leaving a lit lamp behind
+    // and hoping the new scene writes it is not safe, since a lamp whose
+    // new target happens to equal what it had before the blink is never
+    // written again and would stay on.
+    releaseIdentify();
+
     memset(_lampGroup, 0xFF, sizeof(_lampGroup));
     for (uint8_t g = 0; g < _cfg.groupCount; g++) {
         for (uint16_t l = 0; l < LAMPS_MAX_LAMPS; l++) {
@@ -945,14 +955,84 @@ void SceneEngine::flatLitRooms(uint8_t flat, char *out, size_t len) const {
 }
 
 // ---------------------------------------------------------------------------
+// Identify
+// ---------------------------------------------------------------------------
+
+void SceneEngine::identify(uint16_t lamp) {
+    if (lamp >= Lamps.count()) {
+        return;                     // no such lamp: nothing to blink
+    }
+    // One blink at a time. The lamp that was blinking gets its level back
+    // now rather than when its own five phases would have run out.
+    releaseIdentify();
+
+    _identLamp = lamp;
+    _identStart = millis();
+    _identPhase = 0xFF;             // nothing written yet: phase 0 will write
+    // What to give back. A lamp the scene owns is mid-fade, and _current is
+    // where that fade had got to; a lamp the scene does not own is whatever
+    // somebody else last set it to, which only the driver knows.
+    _identSaved = (_lampGroup[lamp] != 0xFF || _lampFlat[lamp] != 0xFF)
+                ? _current[lamp] : Lamps.intensity16(lamp);
+}
+
+void SceneEngine::releaseIdentify() {
+    uint16_t lamp = _identLamp;
+    if (lamp == 0xFFFF) {
+        return;
+    }
+    _identLamp = 0xFFFF;
+    _identPhase = 0xFF;
+    if (lamp >= Lamps.count()) {
+        return;                     // gone with a lamp config: let it go
+    }
+
+    // Put the lamp back where the blink found it, in the driver and in
+    // _current together. For a lamp in a group or a flat that hands it to
+    // the scene's normal path, which fades on from there to whatever the
+    // target is now; writing only _current would leave a lamp lit whenever
+    // the target happened to equal the level the last phase left behind.
+    // For a lamp in neither, this is the whole restore: the per-lamp loop
+    // never touches it.
+    _current[lamp] = _identSaved;
+    Lamps.setIntensity16(lamp, _identSaved);
+    Lamps.show();
+}
+
+void SceneEngine::driveIdentify(uint32_t nowMs) {
+    if (_identLamp == 0xFFFF) {
+        return;
+    }
+    uint32_t elapsed = nowMs - _identStart;
+    if (elapsed >= (uint32_t)IDENT_MS * IDENT_PHASES) {
+        releaseIdentify();
+        return;
+    }
+    uint8_t phase = (uint8_t)(elapsed / IDENT_MS);
+    if (phase == _identPhase) {
+        return;                     // still inside the phase: nothing to send
+    }
+    _identPhase = phase;
+    // Even phases on, odd phases off, so five phases end on.
+    Lamps.setIntensity16(_identLamp, (phase & 1) ? 0 : 0xFFFF);
+    Lamps.show();
+}
+
+// ---------------------------------------------------------------------------
 // Tick
 // ---------------------------------------------------------------------------
 
 void SceneEngine::tick() {
+    uint32_t nowMs = millis();
+
+    // Above the enabled test and above the rate limit: a lamp has to be
+    // findable while the scene is paused, and the phase edges are sharper
+    // for being taken straight off millis().
+    driveIdentify(nowMs);
+
     if (!_enabled) {
         return;
     }
-    uint32_t nowMs = millis();
     if (nowMs - _lastTickMs < TICK_MS) {
         return;
     }
@@ -980,6 +1060,9 @@ void SceneEngine::tick() {
     uint16_t lit = 0;
 
     for (uint16_t lamp = 0; lamp < count; lamp++) {
+        if (lamp == _identLamp) {
+            continue;               // blinking: the scene keeps its hands off
+        }
         uint32_t word = lamp >> 5;
         uint32_t bit = 1u << (lamp & 31);
 

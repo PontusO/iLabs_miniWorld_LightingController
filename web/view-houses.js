@@ -2,6 +2,8 @@
 //                  listed under their building, each row showing who is
 //                  awake and which rooms are lit right now; opening a row
 //                  gives the household its rooms and its daily rhythm.
+//                  Stepping a room's lamp number blinks that lamp on the
+//                  layout, so the right one is easy to find.
 //                  Saving writes the whole scene config, groups included.
 //
 // Invector Embedded Systems AB
@@ -41,6 +43,7 @@
     var NIGHT_WORDS = ["None", "Rare", "Normal", "Often"];
     var MAX_FLATS = 32;   // SCENE_MAX_FLATS
     var MAX_ROOMS = 12;   // FLAT_MAX_ROOMS
+    var MAX_LAMP = 2047;  // LAMPS_MAX_LAMPS - 1
 
     var cfg = null;      // the scene as loaded, edited in place
     var presets = null;  // presets.households, for re-seeding a type
@@ -52,6 +55,9 @@
     var mounted = 0;     // bumped by mount and unmount, drops late replies
     var status = null;   // the last /api/scene/status
     var u = {};
+    var identTimer = null;  // the debounce on the identify request
+    var identLamp = -1;     // the value that timer will ask for
+    var identBad = {};      // lamp numbers the 400 has already been said for
 
     // --- small helpers ----------------------------------------------------
 
@@ -264,6 +270,43 @@
         rows.forEach(paintRow);
     }
 
+    // --- identify ---------------------------------------------------------
+
+    // The one answer worth a word: the number is not a lamp this controller
+    // has. App.api rejects with the server's own text and not with the
+    // status code, so a 400 from this route is recognised by what the route
+    // says, plus the line App.api writes when the body does not parse.
+    var BAD_LAMP = /^(lamp must be|no lamps are fitted|request failed: 400)/;
+
+    // Blink the lamp on the layout, so the room being given a number can be
+    // found among the houses. A held button and a typed number both arrive
+    // here on every change, so the request waits 200 ms for the value to
+    // settle and only the value it settles on is sent. Everything but a 400
+    // is silent: this is a convenience, and a device that is not answering
+    // already says so in the header.
+    function identify(n) {
+        if (typeof n !== "number" || n < 0) return;
+        identLamp = n;
+        if (identTimer) clearTimeout(identTimer);
+        identTimer = setTimeout(function () {
+            identTimer = null;
+            var lamp = identLamp;
+            App.api("POST", "/api/scene/identify", { lamp: lamp }).then(null,
+                function (e) {
+                    var msg = (e && e.message) || "";
+                    if (!BAD_LAMP.test(msg) || identBad[lamp]) return;
+                    identBad[lamp] = true;      // once per value, not per try
+                    App.toast(msg, "error");
+                });
+        }, 200);
+    }
+
+    // Leaving the view drops a blink that has not been asked for yet.
+    function stopIdentify() {
+        if (identTimer) clearTimeout(identTimer);
+        identTimer = null;
+    }
+
     // --- rooms ------------------------------------------------------------
 
     function roomDiscs(box, f, row) {
@@ -291,17 +334,40 @@
                 "No rooms yet. Add one and give it a lamp."));
         }
         f.rooms.forEach(function (r, k) {
+            // Every source of a new number lands here: the two buttons, the
+            // arrow keys and typing. write is false while typing, so the
+            // field is not rewritten under the caret.
+            function commit(n, write) {
+                r.lamp = n;
+                if (write) lamp.value = n;
+                roomDiscs(row.roomBox, f, row);
+                paintRow(row, i);
+                recheck();
+                touch();
+                identify(n);
+            }
             var lamp = el("input", {
-                type: "number", min: 0, max: 9999, value: r.lamp,
+                type: "number", min: 0, max: MAX_LAMP, value: r.lamp,
+                inputmode: "numeric",
                 "aria-label": "Room " + (k + 1) + " lamp",
                 oninput: function (ev) {
-                    r.lamp = num(ev.target.value, 0, 9999, 0);
-                    roomDiscs(row.roomBox, f, row);
-                    paintRow(row, i);
-                    recheck();
-                    touch();
+                    commit(num(ev.target.value, 0, MAX_LAMP, 0), false);
                 }
             });
+            // The buttons read the field rather than r.lamp, so stepping
+            // after a half-typed number carries on from what is shown.
+            function stepper(by, glyph, what) {
+                return el("button", {
+                    type: "button", class: "stepb",
+                    "aria-label": "Room " + (k + 1) + " lamp " + what,
+                    onclick: function () {
+                        var n = num(lamp.value, 0, MAX_LAMP, r.lamp) + by;
+                        commit(Math.max(0, Math.min(MAX_LAMP, n)), true);
+                    }
+                }, glyph);
+            }
+            var step = el("div", { class: "step" },
+                stepper(-1, "−", "down"), lamp, stepper(1, "+", "up"));
             var role = sel(ROOMS, r.role, roomLabel, function (ev) {
                 r.role = ev.target.value;
                 roomDiscs(row.roomBox, f, row);
@@ -324,7 +390,7 @@
                     else row.add.focus();
                 }
             }, "×");
-            box.appendChild(el("div", { class: "rrow" }, lamp, role, del));
+            box.appendChild(el("div", { class: "rrow" }, step, role, del));
         });
         row.add.disabled = f.rooms.length >= MAX_ROOMS;
     }
@@ -425,6 +491,10 @@
         });
 
         var roomBox = el("div", { class: "rtable" });
+        // One line per open flat, not per room: the stepper is the same
+        // control twelve times over.
+        var rhint = el("p", { class: "hint rhint" },
+            "Stepping a lamp number blinks that lamp on the layout.");
         row.add = el("button", {
             type: "button", class: "btn secondary rooms-add",
             onclick: function () {
@@ -501,7 +571,7 @@
                     el("span", null, "Weekend rhythm"), swtch(weekend))),
             line,
             el("h3", null, "Rooms"),
-            row.err, row.warn, roomBox, row.add,
+            row.err, row.warn, roomBox, rhint, row.add,
             el("h3", null, "Rhythm"), rng, grid,
             del);
     }
@@ -680,6 +750,8 @@
 
     function unmount() {
         mounted++;
+        stopIdentify();
+        identBad = {};
         cfg = null;
         rows = [];
         u = {};
