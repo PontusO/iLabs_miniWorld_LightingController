@@ -75,9 +75,9 @@ it, and every web API stays a pure `(method, path, body)` function.
 | `LampWebApi.h/.cpp` | `/api/lamps/config, status, probe, test` | Per-bus status object done, checked against the mock |
 | `RgbLamps.h` | `setColor(module, r, g, b)` over Lamps | Done |
 | `Sun.h/.cpp` | Sunrise/sunset/civil twilight | **Verified** against Lund almanac |
-| `Scene.h/.cpp` | Groups, behaviours (incl. the four household presets), flats (households with rooms), clock, location, JSON | Compiles, reviewed, not yet run on hardware |
-| `SceneEngine.h/.cpp` | The simulation, plus the event layer (day lights, dips, night wake-ups) and `evaluateFlats()` for the flats' rooms | Compiles, reviewed, not yet run on hardware |
-| `SceneWebApi.h/.cpp` | `/api/scene/config, status, clock, identify, presets`; `identify` blinks one lamp so it can be found on the layout | Done |
+| `Scene.h/.cpp` | Groups, behaviours (incl. the four household presets), flats (households with rooms, several lamps per room), clock, location, JSON | Compiles, reviewed, not yet run on hardware |
+| `SceneEngine.h/.cpp` | The simulation, plus the event layer (day lights, dips, night wake-ups) and `evaluateFlats()` for the flats' rooms, one draw per room so all its lamps switch together | Compiles, reviewed, not yet run on hardware |
+| `SceneWebApi.h/.cpp` | `/api/scene/config, status, clock, identify, presets`; `identify` blinks one lamp, or up to eight of them, so a lamp or a whole room can be found on the layout | Done |
 | `NetConfig.h/.cpp` | `/net.json`: credentials, hostname, GUI password, NTP, TZ | Compiles, reviewed |
 | `NetDefaults.h` | Compile-time default network for a board with no `/net.json`; gitignored, copy `NetDefaults.example.h` | Done |
 | `NetManager.h/.cpp` | WiFi state machine, portal AP, SNTP, mDNS, global `Net` | Compiles, reviewed, not yet on a phone |
@@ -87,7 +87,7 @@ it, and every web API stays a pure `(method, path, body)` function.
 | `SystemWebApi.h/.cpp` | `/api/system/status, reboot` | Compiles, checked against the mock. The GUI reads `status` for the firmware line on Home; `reboot` has no button and is curl only. |
 | `Version.h` | `MINIWORLD_VERSION`, printed at boot and in the status | Done |
 | `web/` | SPA, five views, built into `WebUI.gen.h` | Done, reviewed at 320 px and 390 px |
-| `web/view-houses.js/.css` | Houses view: households by building, room states, the rhythm editor | Compiles, reviewed, not yet run on hardware |
+| `web/view-houses.js/.css` | Houses view: households by building, room states, several lamps per room in the group editor's range syntax, the rhythm editor | Compiles, reviewed, not yet run on hardware |
 | `tools/` | `buildweb.py`, `mockserver.py`, `apicheck.sh` | Done |
 | `miniWorld_LightingController.ino` | Application sketch: Net.tick, Http.tick, Scene.tick | Compiles; portal bring-up on a phone still to do, see §5.5 |
 | `i2c.pio`, `pio_i2c.c/.h` | PIO I2C program and primitives, from pico-examples | Vendored, assert removed |

@@ -63,7 +63,7 @@ int SceneWebApi::getConfig(String &body) {
 }
 
 int SceneWebApi::putConfig(const String &in, String &body) {
-    // Static: a SceneConfig is about 4.8 kB and the core-0 stack is far
+    // Static: a SceneConfig is about 14 kB and the core-0 stack is far
     // smaller. One request is served at a time, so this never nests.
     static SceneConfig cfg;
     cfg = Scene.config();
@@ -147,22 +147,53 @@ int SceneWebApi::postIdentify(const String &in, String &body) {
     }
 
     uint16_t count = Lamps.count();
-    int lamp = doc["lamp"].is<int>() ? (int)doc["lamp"] : -1;
-    if (lamp < 0 || lamp >= (int)count) {
-        if (count == 0) {
-            return error(400, "no lamps are fitted", body);
+    if (count == 0) {
+        return error(400, "no lamps are fitted", body);
+    }
+
+    // "lamps" is a whole room blinking together; "lamp" is one lamp, which
+    // is what the GUI sent before rooms held more than one.
+    uint16_t lamps[SceneEngine::IDENT_MAX_LAMPS];
+    uint8_t n = 0;
+    JsonArrayConst arr = doc["lamps"];
+    if (!arr.isNull()) {
+        if (arr.size() > SceneEngine::IDENT_MAX_LAMPS) {
+            return error(400, "at most 8 lamps", body);
         }
+        for (JsonVariantConst v : arr) {
+            int lamp = v.is<int>() ? (int)v : -1;
+            if (lamp < 0 || lamp >= (int)count) {
+                char msg[32];
+                snprintf(msg, sizeof(msg), "lamp must be 0..%d", (int)count - 1);
+                return error(400, msg, body);
+            }
+            lamps[n++] = (uint16_t)lamp;
+        }
+    } else {
+        int lamp = doc["lamp"].is<int>() ? (int)doc["lamp"] : -1;
+        if (lamp < 0 || lamp >= (int)count) {
+            char msg[32];
+            snprintf(msg, sizeof(msg), "lamp must be 0..%d", (int)count - 1);
+            return error(400, msg, body);
+        }
+        lamps[n++] = (uint16_t)lamp;
+    }
+    if (n == 0) {
         char msg[32];
         snprintf(msg, sizeof(msg), "lamp must be 0..%d", (int)count - 1);
         return error(400, msg, body);
     }
 
     // Returns at once: the blink is five phases of tick(), not a wait here.
-    Scene.identify((uint16_t)lamp);
+    Scene.identify(lamps, n);
 
     JsonDocument out;
     out["ok"] = true;
-    out["lamp"] = lamp;
+    out["lamp"] = lamps[0];         // the single-lamp reply, still true
+    JsonArray ls = out["lamps"].to<JsonArray>();
+    for (uint8_t i = 0; i < n; i++) {
+        ls.add(lamps[i]);
+    }
     body = "";
     serializeJson(out, body);
     return 200;

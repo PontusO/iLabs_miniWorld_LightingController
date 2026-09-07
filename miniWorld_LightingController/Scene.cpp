@@ -152,6 +152,29 @@ uint16_t GroupConfig::lampCount() const {
 }
 
 // ---------------------------------------------------------------------------
+// A room's lamps. A short list rather than a bitmap: a room holds a handful
+// of lamps and a flat holds a handful of rooms, so 32 flats of bitmaps would
+// cost far more than the whole config does now.
+// ---------------------------------------------------------------------------
+
+bool RoomConfig::has(uint16_t lamp) const {
+    for (uint8_t i = 0; i < lampCount && i < ROOM_MAX_LAMPS; i++) {
+        if (lamps[i] == lamp) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool RoomConfig::add(uint16_t lamp) {
+    if (lampCount >= ROOM_MAX_LAMPS) {
+        return false;
+    }
+    lamps[lampCount++] = lamp;
+    return true;
+}
+
+// ---------------------------------------------------------------------------
 // Flat presets. The rhythm of a household on a weekday, in minutes since
 // midnight. Everything here can be overridden per flat in JSON; the weekend
 // variations and the daily draw live in the engine.
@@ -387,15 +410,31 @@ void SceneConfig::clamp() {
         if ((uint8_t)F.type >= (uint8_t)Household::COUNT) F.type = Household::Family;
         if (F.roomCount > FLAT_MAX_ROOMS) F.roomCount = FLAT_MAX_ROOMS;
         for (uint8_t r = 0; r < F.roomCount; ) {
-            if (F.rooms[r].lamp >= LAMPS_MAX_LAMPS) F.rooms[r].lamp = LAMPS_MAX_LAMPS - 1;
-            if ((uint8_t)F.rooms[r].role >= (uint8_t)Room::COUNT) F.rooms[r].role = Room::Other;
-            // One lamp, one role. A lamp listed twice in the same flat keeps
-            // its first row, so the engine never ORs two rooms onto it.
-            bool dup = false;
-            for (uint8_t q = 0; q < r; q++) {
-                if (F.rooms[q].lamp == F.rooms[r].lamp) { dup = true; break; }
+            RoomConfig &R = F.rooms[r];
+            if (R.lampCount > ROOM_MAX_LAMPS) R.lampCount = ROOM_MAX_LAMPS;
+            if ((uint8_t)R.role >= (uint8_t)Room::COUNT) R.role = Room::Other;
+            // One lamp, one room. A lamp listed twice anywhere in the flat
+            // keeps its first appearance, so the engine never ORs two rooms
+            // onto it. Clamping an out of range index first can itself make
+            // a duplicate, which the test below then removes.
+            for (uint8_t i = 0; i < R.lampCount; ) {
+                if (R.lamps[i] >= LAMPS_MAX_LAMPS) R.lamps[i] = LAMPS_MAX_LAMPS - 1;
+                bool dup = false;
+                for (uint8_t q = 0; q < i && !dup; q++) {
+                    if (R.lamps[q] == R.lamps[i]) dup = true;
+                }
+                for (uint8_t q = 0; q < r && !dup; q++) {
+                    if (F.rooms[q].has(R.lamps[i])) dup = true;
+                }
+                if (dup) {
+                    for (uint8_t q = i; q + 1 < R.lampCount; q++) R.lamps[q] = R.lamps[q + 1];
+                    R.lampCount--;
+                } else {
+                    i++;
+                }
             }
-            if (dup) {
+            // A room with nothing left in it is not a room.
+            if (R.lampCount == 0) {
                 for (uint8_t q = r; q + 1 < F.roomCount; q++) F.rooms[q] = F.rooms[q + 1];
                 F.roomCount--;
             } else {
@@ -426,6 +465,22 @@ void SceneConfig::clamp() {
 // JSON
 // ---------------------------------------------------------------------------
 
+// One run of consecutive lamps, written the way a person would: a single
+// number, a pair, or an "a-b" range. Shared by the group bitmap and the
+// room lists so both sides of the GUI take the same syntax.
+static void runToJson(JsonArray arr, int start, int end) {
+    if (end == start) {
+        arr.add(start);
+    } else if (end == start + 1) {
+        arr.add(start);
+        arr.add(end);
+    } else {
+        char buf[16];
+        snprintf(buf, sizeof(buf), "%d-%d", start, end);
+        arr.add(buf);
+    }
+}
+
 // Emit the lamp bitmap as ints and "a-b" ranges, which is what a person
 // would write and what the GUI can show.
 static void lampsToJson(const GroupConfig &G, JsonArray arr) {
@@ -435,43 +490,83 @@ static void lampsToJson(const GroupConfig &G, JsonArray arr) {
         if (on && start < 0) {
             start = i;
         } else if (!on && start >= 0) {
-            int end = i - 1;
-            if (end == start) {
-                arr.add(start);
-            } else if (end == start + 1) {
-                arr.add(start);
-                arr.add(end);
-            } else {
-                char buf[16];
-                snprintf(buf, sizeof(buf), "%d-%d", start, end);
-                arr.add(buf);
-            }
+            runToJson(arr, start, i - 1);
             start = -1;
         }
     }
 }
 
+// The same for a room, whose lamps are a short list in the order they were
+// given. Runs are collapsed in that order, so a list written as
+// [4, "6-8"] comes back as [4, "6-8"] and one written out of order keeps
+// the order it was written in.
+static void roomLampsToJson(const RoomConfig &R, JsonArray arr) {
+    uint8_t i = 0;
+    while (i < R.lampCount) {
+        uint8_t j = i;
+        while (j + 1 < R.lampCount && R.lamps[j + 1] == R.lamps[j] + 1) {
+            j++;
+        }
+        runToJson(arr, R.lamps[i], R.lamps[j]);
+        i = (uint8_t)(j + 1);
+    }
+}
+
+// One element of a "lamps" array: a number, or an "a-b" string. Sets a and
+// b to the run it names. Returns false with error set on nonsense; any is
+// false for an element that is neither, which the caller skips.
+static bool lampRunFromJson(JsonVariantConst v, long &a, long &b, bool &any,
+                            String *error) {
+    any = false;
+    if (v.is<int>()) {
+        long n = (int)v;
+        if (n < 0 || n >= LAMPS_MAX_LAMPS) {
+            if (error) *error = "lamp index out of range";
+            return false;
+        }
+        a = b = n;
+        any = true;
+    } else if (v.is<const char *>()) {
+        const char *s = v;
+        const char *dash = strchr(s, '-');
+        a = strtol(s, nullptr, 10);
+        b = dash ? strtol(dash + 1, nullptr, 10) : a;
+        if (a < 0 || b < a || b >= LAMPS_MAX_LAMPS) {
+            if (error) *error = "lamp range out of range";
+            return false;
+        }
+        any = true;
+    }
+    return true;
+}
+
 static bool lampsFromJson(JsonArrayConst arr, GroupConfig &G, String *error) {
     G.clearLamps();
     for (JsonVariantConst v : arr) {
-        if (v.is<int>()) {
-            int n = v;
-            if (n < 0 || n >= LAMPS_MAX_LAMPS) {
-                if (error) *error = "lamp index out of range";
+        long a = 0, b = 0;
+        bool any = false;
+        if (!lampRunFromJson(v, a, b, any, error)) {
+            return false;
+        }
+        for (long i = a; any && i <= b; i++) {
+            G.add((uint16_t)i);
+        }
+    }
+    return true;
+}
+
+static bool roomLampsFromJson(JsonArrayConst arr, RoomConfig &R, String *error) {
+    R.lampCount = 0;
+    for (JsonVariantConst v : arr) {
+        long a = 0, b = 0;
+        bool any = false;
+        if (!lampRunFromJson(v, a, b, any, error)) {
+            return false;
+        }
+        for (long i = a; any && i <= b; i++) {
+            if (!R.add((uint16_t)i)) {
+                if (error) *error = "room has more than 8 lamps";
                 return false;
-            }
-            G.add((uint16_t)n);
-        } else if (v.is<const char *>()) {
-            const char *s = v;
-            const char *dash = strchr(s, '-');
-            long a = strtol(s, nullptr, 10);
-            long b = dash ? strtol(dash + 1, nullptr, 10) : a;
-            if (a < 0 || b < a || b >= LAMPS_MAX_LAMPS) {
-                if (error) *error = "lamp range out of range";
-                return false;
-            }
-            for (long i = a; i <= b; i++) {
-                G.add((uint16_t)i);
             }
         }
     }
@@ -533,7 +628,7 @@ void SceneConfig::toJson(String &out) const {
         JsonArray rs = o["rooms"].to<JsonArray>();
         for (uint8_t r = 0; r < F.roomCount; r++) {
             JsonObject ro = rs.add<JsonObject>();
-            ro["lamp"] = F.rooms[r].lamp;
+            roomLampsToJson(F.rooms[r], ro["lamps"].to<JsonArray>());
             ro["role"] = roomName(F.rooms[r].role);
         }
         JsonArray wk = o["wake"].to<JsonArray>();
@@ -568,7 +663,7 @@ bool SceneConfig::fromJson(const String &in, String *error) {
         return false;
     }
 
-    // Static: a SceneConfig is about 4.8 kB and the core-0 stack is far
+    // Static: a SceneConfig is about 14 kB and the core-0 stack is far
     // smaller. The sketch is single-threaded and fromJson() never nests with
     // itself, so one working copy can be shared.
     static SceneConfig next;
@@ -684,18 +779,35 @@ bool SceneConfig::fromJson(const String &in, String *error) {
                         if (error) *error = "too many rooms in a flat";
                         return false;
                     }
-                    int lamp = ro["lamp"] | -1;
-                    if (lamp < 0 || lamp >= LAMPS_MAX_LAMPS) {
-                        if (error) *error = "room lamp index out of range";
-                        return false;
+                    RoomConfig &R = F.rooms[F.roomCount];
+                    R.lampCount = 0;
+
+                    // "lamps" is the list form. "lamp" is what a scene file
+                    // written before a room could hold several lamps has,
+                    // and it means a list of one.
+                    JsonArrayConst ls = ro["lamps"];
+                    if (!ls.isNull()) {
+                        if (!roomLampsFromJson(ls, R, error)) {
+                            return false;
+                        }
+                    } else if (ro["lamp"].is<int>()) {
+                        int lamp = ro["lamp"];
+                        if (lamp < 0 || lamp >= LAMPS_MAX_LAMPS) {
+                            if (error) *error = "room lamp index out of range";
+                            return false;
+                        }
+                        R.add((uint16_t)lamp);
                     }
+
                     Room role = Room::Other;
                     if (!parseRoom(ro["role"] | "other", role)) {
                         if (error) *error = "unknown room role";
                         return false;
                     }
-                    F.rooms[F.roomCount].lamp = (uint16_t)lamp;
-                    F.rooms[F.roomCount].role = role;
+                    // A room with no lamps at all is kept here and dropped by
+                    // clamp(), which is also what removes a lamp the flat
+                    // already lists somewhere else.
+                    R.role = role;
                     F.roomCount++;
                 }
             }
@@ -750,7 +862,7 @@ bool SceneStore::load(SceneConfig &cfg) {
     f.close();
 
     // Parsed straight into cfg, with no intermediate copy: a SceneConfig is
-    // about 4.8 kB, too much for the stack, and fromJson() only commits on
+    // about 14 kB, too much for the stack, and fromJson() only commits on
     // success, so cfg is untouched when the file does not parse.
     return cfg.fromJson(body);
 }

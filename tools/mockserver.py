@@ -33,6 +33,8 @@ WEBDIR = Path(__file__).resolve().parent.parent / "web"
 LAMPS_MAX_LAMPS = 2048
 LAMPS_NUM_BUSES = 12
 SCENE_MAX_GROUPS = 16
+# SceneEngine::identify() blinks up to this many lamps together.
+IDENTIFY_MAX_LAMPS = 8
 
 # The paths phones and desktops fetch to find out whether they are behind a
 # captive portal, the same list HttpServer.cpp answers with a redirect.
@@ -125,11 +127,13 @@ BEHAVIOUR_PRESETS = {
     },
 }
 
-# Flats: spec section 2. SCENE_MAX_FLATS / FLAT_MAX_ROOMS mirror the firmware
-# #defines; ROOM_NAMES is the Room enum order, used both for /api/scene/presets
-# "rooms" and for the order status letters are checked in.
+# Flats: spec section 2. SCENE_MAX_FLATS / FLAT_MAX_ROOMS / ROOM_MAX_LAMPS
+# mirror the firmware #defines; ROOM_NAMES is the Room enum order, used both
+# for /api/scene/presets "rooms" and for the order status letters are checked
+# in.
 SCENE_MAX_FLATS = 32
 FLAT_MAX_ROOMS = 12
+ROOM_MAX_LAMPS = 8
 FLAT_TYPES = ("family", "elderly", "nightowl", "away", "custom")
 ROOM_NAMES = ("living", "kitchen", "bedroom", "bathroom", "hall", "other")
 ROOM_LETTERS = {
@@ -413,14 +417,19 @@ def group_from_json(o):
 
 def make_flat(name, building, ftype, weekend, room_lamps_roles):
     """Seed helper, the flat equivalent of make_group: setPreset(ftype) then
-    the fixed fields, no further overrides."""
+    the fixed fields, no further overrides. A room's lamps are given as one
+    number or as a list of them."""
     preset = FLAT_HOUSEHOLD_PRESETS["family" if ftype == "custom" else ftype]
     f = dict(preset)
     f["name"] = name
     f["building"] = building
     f["type"] = ftype
     f["weekend"] = weekend
-    f["rooms"] = [{"lamp": lamp, "role": role} for lamp, role in room_lamps_roles]
+    f["rooms"] = [
+        {"lamps": sorted(set(lamps if isinstance(lamps, (list, tuple)) else [lamps])),
+         "role": role}
+        for lamps, role in room_lamps_roles
+    ]
     return f
 
 
@@ -430,7 +439,10 @@ def flat_to_json(f):
         "building": f["building"],
         "type": f["type"],
         "weekend": f["weekend"],
-        "rooms": [dict(r) for r in f["rooms"]],
+        # A room's lamps are written like a group's: single numbers and
+        # "a-b" strings, through the same helper.
+        "rooms": [{"lamps": compress_lamps(r["lamps"]), "role": r["role"]}
+                  for r in f["rooms"]],
         "wake": list(f["wake"]),
         "leave": list(f["leave"]),
         "home": list(f["home"]),
@@ -469,18 +481,32 @@ def flat_from_json(o, index):
         raise ApiError(400, "rooms must be an array")
     # clamp(): roomCount 0..12.
     rooms = []
+    used = set()
     for r in rooms_in[:FLAT_MAX_ROOMS]:
         if not isinstance(r, dict):
             raise ApiError(400, "room must be an object")
-        lamp = r.get("lamp", 0)
-        if not isinstance(lamp, int) or isinstance(lamp, bool):
-            lamp = 0
-        # clamp(): lamp below LAMPS_MAX_LAMPS.
-        lamp = max(0, min(LAMPS_MAX_LAMPS - 1, lamp))
+        if "lamps" in r:
+            # Written like a group's lamps, read by the same helper, which
+            # is also what keeps every lamp below LAMPS_MAX_LAMPS.
+            lamps = expand_lamps(r["lamps"])
+        else:
+            # The old one-lamp room, read as a list of one.
+            lamp = r.get("lamp", 0)
+            if not isinstance(lamp, int) or isinstance(lamp, bool):
+                lamp = 0
+            lamps = {max(0, min(LAMPS_MAX_LAMPS - 1, lamp))}
+        if len(lamps) > ROOM_MAX_LAMPS:
+            raise ApiError(400, "room has more than 8 lamps")
         role = r.get("role")
         if role not in ROOM_NAMES:
             role = "other"
-        rooms.append({"lamp": lamp, "role": role})
+        # clamp(): a lamp another room of this flat already lists belongs to
+        # that room, and a room left with nothing is dropped.
+        lamps = sorted(lamps - used)
+        if not lamps:
+            continue
+        used.update(lamps)
+        rooms.append({"lamps": lamps, "role": role})
     f["rooms"] = rooms
 
     for key in ("wake", "leave", "home", "bed"):
@@ -647,8 +673,11 @@ class SceneState:
         # inside the "Flats" group above, since a flat-owned lamp is only a
         # /api/scene ownership detail the engine acts on, not the mock).
         self.flats = [
+            # One room with two lamps, so the GUI has a room to show the
+            # list form on: the Anderssons light their living room from
+            # two fittings.
             make_flat("Andersson", "Storgatan 3", "family", True, [
-                (16, "kitchen"), (17, "living"), (18, "bedroom"),
+                (16, "kitchen"), ([17, 41], "living"), (18, "bedroom"),
                 (19, "bathroom"), (20, "hall"),
             ]),
             make_flat("Karlsson", "Storgatan 3", "elderly", True, [
@@ -1277,20 +1306,39 @@ class Handler(BaseHTTPRequestHandler):
         self._send_json({"error": "not found"}, 404)
 
     # There is no lamp to blink here, so the mock does what the firmware
-    # does apart from the light itself: it checks the number and says so on
+    # does apart from the light itself: it checks the numbers and says so on
     # stderr, which is enough to watch the GUI's debounce from the log.
+    # Both forms are taken, {"lamp": n} and {"lamps": [n, ...]}, the second
+    # up to eight lamps blinked together.
     def _identify(self, data):
         if not isinstance(data, dict):
             raise ApiError(400, "invalid JSON")
         count = LAMPS.lamp_count()
-        lamp = data.get("lamp")
-        if not isinstance(lamp, int) or isinstance(lamp, bool) \
-                or lamp < 0 or lamp >= count:
+
+        def bad():
             if count == 0:
-                raise ApiError(400, "no lamps are fitted")
-            raise ApiError(400, "lamp must be 0..%d" % (count - 1))
-        sys.stderr.write("mock: identify lamp %d\n" % lamp)
-        return {"ok": True, "lamp": lamp}
+                return ApiError(400, "no lamps are fitted")
+            return ApiError(400, "lamp must be 0..%d" % (count - 1))
+
+        if "lamps" in data:
+            given = data["lamps"]
+            if not isinstance(given, list):
+                raise ApiError(400, "lamps must be an array")
+            if len(given) > IDENTIFY_MAX_LAMPS:
+                raise ApiError(400, "at most 8 lamps")
+        else:
+            given = [data.get("lamp")]
+        lamps = []
+        for lamp in given:
+            if not isinstance(lamp, int) or isinstance(lamp, bool) \
+                    or lamp < 0 or lamp >= count:
+                raise bad()
+            lamps.append(lamp)
+        if not lamps:
+            raise bad()
+        sys.stderr.write("mock: identify lamps %s\n"
+                         % ", ".join(str(n) for n in lamps))
+        return {"ok": True, "lamps": lamps}
 
     def _api(self, method, path, data):
         if path == "/api/lamps/config":

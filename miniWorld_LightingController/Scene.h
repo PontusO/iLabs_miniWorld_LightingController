@@ -31,7 +31,7 @@
             "building": "Storgatan 3",  GUI grouping only, may be empty
             "type": "family" | "elderly" | "nightowl" | "away" | "custom",
             "weekend": true,            weekend rhythm on Saturday and Sunday
-            "rooms": [ { "lamp": 4, "role": "kitchen" } ],
+            "rooms": [ { "lamps": [4, "6-8"], "role": "kitchen" } ],
             "wake":  [390, 435],        the household's daily rhythm, minutes
             "leave": [450, 495],        a negative from means "never leaves"
             "home":  [960, 1050],
@@ -63,6 +63,12 @@
     the type is a starting point and not a lock. A scene file without
     "flats" loads exactly as it did before flats existed.
 
+    A room carries a list of up to eight lamps and they behave as one: the
+    room draws its intervals and its life events once and every lamp in it
+    gets the same bits, so a ceiling light and two wall lamps are one room
+    and not three. The list is written like a group's, single numbers and
+    "a-b" strings, and the old one-lamp form "lamp": n still loads.
+
     Invector Embedded Systems AB
 */
 
@@ -75,6 +81,7 @@
 #define SCENE_NAME_LEN     24
 #define SCENE_MAX_FLATS    32
 #define FLAT_MAX_ROOMS     12
+#define ROOM_MAX_LAMPS     8
 
 enum class Behaviour : uint8_t {
     Off = 0,        // never lit
@@ -147,9 +154,16 @@ enum class Room : uint8_t {
     COUNT
 };
 
+// One room of a flat: the lamps that light together and what the room is
+// for. Every lamp here gets the same intervals and the same events, so the
+// list is one room and not several.
 struct RoomConfig {
-    uint16_t lamp;
+    uint16_t lamps[ROOM_MAX_LAMPS];
+    uint8_t lampCount;
     Room role;
+
+    bool has(uint16_t lamp) const;
+    bool add(uint16_t lamp);        // false when the room is already full
 };
 
 struct FlatConfig {

@@ -16,11 +16,12 @@ Groups stay for everything that is not a household.
 ```
 #define SCENE_MAX_FLATS  32
 #define FLAT_MAX_ROOMS   12
+#define ROOM_MAX_LAMPS   8
 
 enum class Household : uint8_t { Family = 0, Elderly, NightOwl, Away, Custom, COUNT };
 enum class Room      : uint8_t { Living = 0, Kitchen, Bedroom, Bathroom, Hall, Other, COUNT };
 
-struct RoomConfig { uint16_t lamp; Room role; };
+struct RoomConfig { uint16_t lamps[ROOM_MAX_LAMPS]; uint8_t lampCount; Room role; };
 
 struct FlatConfig {
     char name[SCENE_NAME_LEN];        // "Andersson"
@@ -44,7 +45,25 @@ struct FlatConfig {
 ```
 
 `SceneConfig` gains `uint8_t flatCount; FlatConfig flats[SCENE_MAX_FLATS];`.
-About 32 x 110 bytes; every `SceneConfig` instance is static already.
+About 32 x 292 bytes; every `SceneConfig` instance is static already.
+
+> Amended 2026-09-07: a room holds a list of up to eight lamps rather than
+> one, and they behave as one room. `RoomConfig` grew from 4 bytes to 18,
+> which is 5376 bytes on every `SceneConfig` copy and about 27 kB of
+> globals over the five of them. The `lamps` list is written like a
+> group's, single numbers and `"a-b"` strings; a room with more than eight
+> is the error `"room has more than 8 lamps"`; a room with none is dropped
+> by `clamp()`, which also drops a lamp the flat already lists in an
+> earlier room. The old `"lamp": n` still loads as a list of one. Every
+> draw a room makes, the minutes around the household's moments and the
+> life events alike, hangs on `roomKey = 0x30000 + flat * 16 + roomIndex`
+> instead of a lamp index, so the lamps of a room switch together and
+> adding one does not reshuffle the rest of the flat. `identify()` takes
+> up to eight lamps at a time and `POST /api/scene/identify` accepts
+> `{"lamps": [n, ...]}` beside `{"lamp": n}`. In the GUI the room row's
+> lamp number field becomes a range field validated like the group
+> editor's, with a blink button that identifies the whole room; the
+> stepper still works when the field holds a single number.
 
 JSON, inside `/scene.json` next to `groups`:
 
@@ -52,7 +71,7 @@ JSON, inside `/scene.json` next to `groups`:
 "flats": [
   { "name": "Andersson", "building": "Storgatan 3", "type": "family",
     "weekend": true,
-    "rooms": [ {"lamp": 4, "role": "kitchen"}, {"lamp": 5, "role": "living"} ],
+    "rooms": [ {"lamps": [4], "role": "kitchen"}, {"lamps": [5, "7-8"], "role": "living"} ],
     "wake": [390, 435], "leave": [450, 495], "home": [960, 1050], "bed": [1350, 1410],
     "outPercent": 14, "tvPercent": 70, "level": 210, "fadeMs": 300,
     "dayActivity": 3, "nightActivity": 1 }
@@ -63,9 +82,11 @@ Type names: `family`, `elderly`, `nightowl`, `away`, `custom`. Room names:
 `living`, `kitchen`, `bedroom`, `bathroom`, `hall`, `other`. On load a
 flat is built with `setPreset(type)` first, then present fields
 override, like groups. Missing `flats` means none. `clamp()`: name and
-building non-empty (name defaults to "Flat n"), roomCount 0..12, lamp
-below `LAMPS_MAX_LAMPS`, percentages 0..100, activities 0..3, ranges
-ordered (`to >= from`).
+building non-empty (name defaults to "Flat n"), roomCount 0..12, lamps
+0..8 per room and each below `LAMPS_MAX_LAMPS`, a lamp listed twice in
+the flat dropped after its first appearance and a room left empty
+dropped with it, percentages 0..100, activities 0..3, ranges ordered
+(`to >= from`).
 
 Presets (`setPreset`), weekday values:
 
@@ -114,8 +135,9 @@ Weekday: `tm_wday` from `localtime_r` when the clock is valid, else
 derived from `_doy` with 2026-01-01 a Thursday: `wday = (doy + 3) % 7`.
 Weekend is `wday == 0 || wday == 6`.
 
-`away` type: no rhythm; a living or other room, if present, is a timer
-lamp 19:00..22:30; every other room dark; no events.
+`away` type: no rhythm; a living or other room, if present, is the timer
+room 19:00..22:30, every lamp of it together; every other room dark; no
+events.
 
 ### 3.2 Room schedule
 
@@ -131,8 +153,9 @@ compared with `inWindow()` semantics (intervals may cross midnight):
 | bathroom | [wake + 5, wake + 15]; otherwise events only |
 | other | like living without television |
 
-Per-room variation (the 20..40 style ranges) uses `unit(lamp, salt)`
-so two kitchens in one building differ. When the household is out
+Per-room variation (the 20..40 style ranges) uses `unit(roomKey, salt)`
+so two kitchens in one building differ and the lamps of one kitchen do
+not. When the household is out
 (between leave and home, or an out evening before `ret`), every room is
 dark regardless of the table.
 
@@ -262,7 +285,12 @@ lamps 16..40.
 
 - **Rooms as a short lamp list, not a bitmap.** A flat has a handful of
   lamps; 32 flats of bitmaps would cost 80 kB across the static config
-  copies.
+  copies. The 2026-09-07 amendment made the list eight long instead of
+  one, which is the same reasoning at a different size.
+- **The room, not the lamp, is the unit inside a flat.** A ceiling light
+  and two wall lamps are one room, so they draw once and switch
+  together; a lamp index as the draw key would have reshuffled every
+  other lamp of the flat whenever one was added.
 - **One rhythm per flat, rooms derived.** That is the whole point: the
   household is the unit of behaviour, the lamp is not.
 - **Daylight clipping on evening and morning intervals.** Clock-anchored

@@ -2,8 +2,9 @@
 //                  listed under their building, each row showing who is
 //                  awake and which rooms are lit right now; opening a row
 //                  gives the household its rooms and its daily rhythm.
-//                  Stepping a room's lamp number blinks that lamp on the
-//                  layout, so the right one is easy to find.
+//                  A room holds up to eight lamps, written as 4, 6-8, and
+//                  its blink button lights the whole room on the layout, so
+//                  the right one is easy to find.
 //                  Saving writes the whole scene config, groups included.
 //
 // Invector Embedded Systems AB
@@ -44,6 +45,16 @@
     var MAX_FLATS = 32;   // SCENE_MAX_FLATS
     var MAX_ROOMS = 12;   // FLAT_MAX_ROOMS
     var MAX_LAMP = 2047;  // LAMPS_MAX_LAMPS - 1
+    var MAX_ROOM_LAMPS = 8;  // ROOM_MAX_LAMPS
+    var STEP_TITLE = "Step works for a single lamp";
+    // A pendant lamp: cord, shade, and the light it throws. Drawn here
+    // rather than fetched, like every other mark on this page.
+    var LAMP_SVG = '<svg viewBox="0 0 24 24" width="21" height="21" '
+        + 'fill="none" stroke="currentColor" stroke-width="1.6" '
+        + 'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" '
+        + 'focusable="false"><path d="M12 3.6v3.8"/>'
+        + '<path d="M8.6 7.4h6.8l3.2 7H5.4z"/>'
+        + '<circle cx="12" cy="17.4" r="1.7"/></svg>';
 
     var cfg = null;      // the scene as loaded, edited in place
     var presets = null;  // presets.households, for re-seeding a type
@@ -56,8 +67,8 @@
     var status = null;   // the last /api/scene/status
     var u = {};
     var identTimer = null;  // the debounce on the identify request
-    var identLamp = -1;     // the value that timer will ask for
-    var identBad = {};      // lamp numbers the 400 has already been said for
+    var identLamps = [];    // the lamps that timer will ask for
+    var identBad = {};      // lamp lists the 400 has already been said for
 
     // --- small helpers ----------------------------------------------------
 
@@ -146,12 +157,77 @@
         return (f && f.name) || "another flat";
     }
 
-    // One pass over every flat. A lamp number the controller can never
-    // have (below 0 or above 2047) and a repeat inside one flat are errors
-    // and hold Save. A lamp beyond what is fitted today is only a warning:
-    // a house is often wired before its driver board is, and the flat
-    // must stay editable and deletable meanwhile. A lamp two flats both
-    // claim is a warning too, since the first flat listing it gets it.
+    // The lamps of one room, as the field says them. r.err carries what
+    // App.parseRanges said about the text, so a room that cannot be read
+    // is told apart from one nobody has filled in yet.
+    function readRoom(r, text) {
+        r.text = text;
+        try {
+            r.lamps = App.parseRanges(text, MAX_LAMP + 1);
+            r.err = "";
+        } catch (e) {
+            r.lamps = [];
+            r.err = /empty range/.test(e.message) ? "empty" : e.message;
+        }
+    }
+
+    // A room as it arrives: a list written like a group's lamps, or, from a
+    // controller older than this GUI, a single "lamp" number.
+    function fromJson(r) {
+        var src = Array.isArray(r.lamps) ? r.lamps
+            : (typeof r.lamp === "number" ? [r.lamp] : []);
+        readRoom(r, src.join(", "));
+        delete r.lamp;
+    }
+
+    // Text this room cannot be read from, more than eight lamps in it, and
+    // a lamp the flat lists twice all hold Save.
+    function roomErr(r, k, seen) {
+        var name = "Room " + (k + 1);
+        if (r.err === "empty") {
+            return name + " has no lamp yet. Write a number, or remove the row.";
+        }
+        if (r.err) {
+            return name + ": " + r.err
+                + ". Write lamp numbers and ranges, like 4, 6-8.";
+        }
+        if (r.lamps.length > MAX_ROOM_LAMPS) {
+            return name + " has " + r.lamps.length + " lamps. A room holds at most "
+                + MAX_ROOM_LAMPS + ".";
+        }
+        for (var j = 0; j < r.lamps.length; j++) {
+            if (seen[r.lamps[j]]) {
+                return "Lamp " + r.lamps[j] + " is in this flat twice.";
+            }
+        }
+        return "";
+    }
+
+    // A lamp beyond what is fitted today is only a warning: a house is
+    // often wired before its driver board is, and the flat must stay
+    // editable and deletable meanwhile. A lamp two flats both claim is a
+    // warning too, since the first flat listing it gets it.
+    function roomWarn(r, i, users) {
+        for (var j = 0; j < r.lamps.length; j++) {
+            var n = r.lamps[j];
+            if (lampMax && n >= lampMax) {
+                return "Lamp " + n + " is beyond the " + lampMax
+                    + " lamps fitted; it lights once that hardware is added.";
+            }
+            var also = users[n] || [];
+            if (also.length > 1) {
+                return also[0] === i
+                    ? "Lamp " + n + " is in " + flatName(also[1])
+                        + " too. This flat is listed first and keeps it."
+                    : "Lamp " + n + " is in " + flatName(also[0])
+                        + " too, which is listed first and keeps it.";
+            }
+        }
+        return "";
+    }
+
+    // One pass over every flat, keeping the first error and the first
+    // warning of each: one line each is what the open editor shows.
     function check() {
         errs = [];
         warns = [];
@@ -159,30 +235,18 @@
         var users = {};
         cfg.flats.forEach(function (f, i) {
             f.rooms.forEach(function (r) {
-                if (!users[r.lamp]) users[r.lamp] = [];
-                if (users[r.lamp].indexOf(i) < 0) users[r.lamp].push(i);
+                r.lamps.forEach(function (n) {
+                    if (!users[n]) users[n] = [];
+                    if (users[n].indexOf(i) < 0) users[n].push(i);
+                });
             });
         });
         cfg.flats.forEach(function (f, i) {
             var seen = {}, err = "", warn = "";
-            f.rooms.forEach(function (r) {
-                var n = r.lamp;
-                var also = users[n] || [];
-                if (!err && (typeof n !== "number" || n < 0 || n > 2047)) {
-                    err = "Lamp " + n + " is outside 0 to 2047.";
-                } else if (!err && seen[n]) {
-                    err = "Lamp " + n + " is in this flat twice.";
-                } else if (!warn && lampMax && n >= lampMax) {
-                    warn = "Lamp " + n + " is beyond the " + lampMax
-                        + " lamps fitted; it lights once that hardware is added.";
-                } else if (!warn && also.length > 1) {
-                    warn = also[0] === i
-                        ? "Lamp " + n + " is in " + flatName(also[1])
-                            + " too. This flat is listed first and keeps it."
-                        : "Lamp " + n + " is in " + flatName(also[0])
-                            + " too, which is listed first and keeps it.";
-                }
-                seen[n] = true;
+            f.rooms.forEach(function (r, k) {
+                if (!err) err = roomErr(r, k, seen);
+                if (!warn) warn = roomWarn(r, i, users);
+                r.lamps.forEach(function (n) { seen[n] = true; });
             });
             errs.push(err);
             warns.push(warn);
@@ -278,24 +342,29 @@
     // says, plus the line App.api writes when the body does not parse.
     var BAD_LAMP = /^(lamp must be|no lamps are fitted|request failed: 400)/;
 
-    // Blink the lamp on the layout, so the room being given a number can be
-    // found among the houses. A held button and a typed number both arrive
-    // here on every change, so the request waits 200 ms for the value to
-    // settle and only the value it settles on is sent. Everything but a 400
-    // is silent: this is a convenience, and a device that is not answering
+    // Blink the room's lamps on the layout, all of them together, so the
+    // room being given its numbers can be found among the houses. A held
+    // button, a typed list and the blink button all arrive here on every
+    // change, so the request waits 200 ms for the list to settle and only
+    // the list it settles on is sent. A list this page already knows the
+    // device will refuse is not sent at all. Everything but a 400 is
+    // silent: this is a convenience, and a device that is not answering
     // already says so in the header.
-    function identify(n) {
-        if (typeof n !== "number" || n < 0) return;
-        identLamp = n;
+    function identify(lamps) {
+        // A new value, valid or not, cancels whatever blink was pending,
+        // so a list the field no longer shows can never fire late.
         if (identTimer) clearTimeout(identTimer);
+        identTimer = null;
+        if (!lamps || !lamps.length || lamps.length > MAX_ROOM_LAMPS) return;
+        identLamps = lamps.slice();
         identTimer = setTimeout(function () {
             identTimer = null;
-            var lamp = identLamp;
-            App.api("POST", "/api/scene/identify", { lamp: lamp }).then(null,
+            var list = identLamps, key = list.join(",");
+            App.api("POST", "/api/scene/identify", { lamps: list }).then(null,
                 function (e) {
                     var msg = (e && e.message) || "";
-                    if (!BAD_LAMP.test(msg) || identBad[lamp]) return;
-                    identBad[lamp] = true;      // once per value, not per try
+                    if (!BAD_LAMP.test(msg) || identBad[key]) return;
+                    identBad[key] = true;      // once per list, not per try
                     App.toast(msg, "error");
                 });
         }, 200);
@@ -319,7 +388,10 @@
         f.rooms.forEach(function (r) {
             var d = el("span", { class: "rd off" },
                 ROOM_LETTER[r.role] || "o");
-            d.setAttribute("title", roomLabel(r.role) + ", lamp " + r.lamp);
+            d.setAttribute("title", roomLabel(r.role) + ", "
+                + (!r.lamps.length ? "no lamp yet"
+                    : (r.lamps.length === 1 ? "lamp " : "lamps ")
+                        + App.rangesText(r.lamps)));
             box.appendChild(d);
             row.discs.push(d);
         });
@@ -328,46 +400,64 @@
     function renderRooms(box, f, i, row) {
         box.innerHTML = "";
         box.appendChild(el("div", { class: "rhead" },
-            el("span", null, "Lamp"), el("span", null, "Room")));
+            el("span", null, "Lamps"), el("span", null, "Room")));
         if (!f.rooms.length) {
             box.appendChild(el("p", { class: "hint" },
                 "No rooms yet. Add one and give it a lamp."));
         }
         f.rooms.forEach(function (r, k) {
-            // Every source of a new number lands here: the two buttons, the
-            // arrow keys and typing. write is false while typing, so the
-            // field is not rewritten under the caret.
-            function commit(n, write) {
-                r.lamp = n;
-                if (write) lamp.value = n;
+            // Every source of a new list lands here: the two step buttons
+            // and typing. write is false while typing, so the field is not
+            // rewritten under the caret.
+            function commit(text, write) {
+                readRoom(r, text);
+                if (write) field.value = text;
+                syncStep();
                 roomDiscs(row.roomBox, f, row);
                 paintRow(row, i);
                 recheck();
                 touch();
-                identify(n);
+                identify(r.lamps);
             }
-            var lamp = el("input", {
-                type: "number", min: 0, max: MAX_LAMP, value: r.lamp,
-                inputmode: "numeric",
-                "aria-label": "Room " + (k + 1) + " lamp",
-                oninput: function (ev) {
-                    commit(num(ev.target.value, 0, MAX_LAMP, 0), false);
-                }
+            var field = el("input", {
+                type: "text", class: "rlamps", value: r.text,
+                inputmode: "numeric", autocomplete: "off", spellcheck: "false",
+                placeholder: "4, 6-8",
+                "aria-label": "Room " + (k + 1) + " lamps",
+                oninput: function (ev) { commit(ev.target.value, false); }
             });
-            // The buttons read the field rather than r.lamp, so stepping
-            // after a half-typed number carries on from what is shown.
+            // Stepping means one lamp up or down, which a list has no
+            // answer to, so with anything but a single number the two
+            // buttons are off and say why.
             function stepper(by, glyph, what) {
                 return el("button", {
                     type: "button", class: "stepb",
                     "aria-label": "Room " + (k + 1) + " lamp " + what,
                     onclick: function () {
-                        var n = num(lamp.value, 0, MAX_LAMP, r.lamp) + by;
-                        commit(Math.max(0, Math.min(MAX_LAMP, n)), true);
+                        if (r.lamps.length !== 1) return;
+                        commit(String(Math.max(0, Math.min(MAX_LAMP,
+                            r.lamps[0] + by))), true);
                     }
                 }, glyph);
             }
-            var step = el("div", { class: "step" },
-                stepper(-1, "−", "down"), lamp, stepper(1, "+", "up"));
+            var down = stepper(-1, "−", "down"), up = stepper(1, "+", "up");
+            var step = el("div", { class: "step" }, down, up);
+            var blink = el("button", {
+                type: "button", class: "blinkb", html: LAMP_SVG,
+                title: "Blink this room", "aria-label": "Blink this room",
+                onclick: function () { identify(r.lamps); }
+            });
+            function syncStep() {
+                var one = r.lamps.length === 1;
+                [down, up, step].forEach(function (node) {
+                    if (node !== step) node.disabled = !one;
+                    if (one) node.removeAttribute("title");
+                    else node.setAttribute("title", STEP_TITLE);
+                });
+                blink.disabled = !r.lamps.length
+                    || r.lamps.length > MAX_ROOM_LAMPS;
+            }
+            syncStep();
             var role = sel(ROOMS, r.role, roomLabel, function (ev) {
                 r.role = ev.target.value;
                 roomDiscs(row.roomBox, f, row);
@@ -390,7 +480,8 @@
                     else row.add.focus();
                 }
             }, "×");
-            box.appendChild(el("div", { class: "rrow" }, step, role, del));
+            box.appendChild(el("div", { class: "rrow" },
+                field, role, blink, del, step));
         });
         row.add.disabled = f.rooms.length >= MAX_ROOMS;
     }
@@ -494,12 +585,14 @@
         // One line per open flat, not per room: the stepper is the same
         // control twelve times over.
         var rhint = el("p", { class: "hint rhint" },
-            "Stepping a lamp number blinks that lamp on the layout.");
+            "A room can hold up to eight lamps, written as 4, 6-8. The lamp "
+            + "button blinks the whole room on the layout, and so does the "
+            + "stepper on a room with one lamp.");
         row.add = el("button", {
             type: "button", class: "btn secondary rooms-add",
             onclick: function () {
                 if (f.rooms.length >= MAX_ROOMS) return;
-                f.rooms.push({ lamp: 0, role: "living" });
+                f.rooms.push({ lamps: [0], text: "0", err: "", role: "living" });
                 renderRooms(roomBox, f, i, row);
                 roomDiscs(row.roomBox, f, row);
                 paintRow(row, i);
@@ -680,10 +773,31 @@
         }
     }
 
+    // The scene as the device wants it. The room rows carry the text the
+    // field holds and what the parser made of it, which are this page's
+    // business, so the rooms are written out again as lamps and a role.
+    function payload() {
+        var out = {}, key;
+        for (key in cfg) {
+            if (Object.prototype.hasOwnProperty.call(cfg, key)) out[key] = cfg[key];
+        }
+        out.flats = cfg.flats.map(function (f) {
+            var g = {}, k;
+            for (k in f) {
+                if (Object.prototype.hasOwnProperty.call(f, k)) g[k] = f[k];
+            }
+            g.rooms = f.rooms.map(function (r) {
+                return { lamps: r.lamps.slice(), role: r.role };
+            });
+            return g;
+        });
+        return out;
+    }
+
     function save() {
         if (!cfg || !ok()) return;
         u.save.disabled = true;
-        App.api("PUT", "/api/scene/config", cfg).then(function () {
+        App.api("PUT", "/api/scene/config", payload()).then(function () {
             changed = false;
             updateSave();
             App.toast("Households saved", "ok");
@@ -736,6 +850,7 @@
             if (!cfg.flats) cfg.flats = [];
             cfg.flats.forEach(function (f) {
                 if (!Array.isArray(f.rooms)) f.rooms = [];
+                f.rooms.forEach(fromJson);
                 RANGES.forEach(function (rg) {
                     if (!Array.isArray(f[rg[0]])) f[rg[0]] = [-1, -1];
                 });

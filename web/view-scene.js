@@ -671,7 +671,19 @@
             taken = {};
             (cfg.flats || []).forEach(function (f) {
                 (f.rooms || []).forEach(function (rm) {
-                    if (taken[rm.lamp] === undefined) taken[rm.lamp] = f.name || "a flat";
+                    // A room holds a list of lamps, written like a group's;
+                    // a controller older than this GUI sends one "lamp".
+                    var src = Array.isArray(rm.lamps) ? rm.lamps
+                        : (typeof rm.lamp === "number" ? [rm.lamp] : []);
+                    var list;
+                    try {
+                        list = App.parseRanges(src.join(", "));
+                    } catch (e) {
+                        list = [];
+                    }
+                    list.forEach(function (n) {
+                        if (taken[n] === undefined) taken[n] = f.name || "a flat";
+                    });
                 });
             });
             if (!cfg.location) cfg.location = {};

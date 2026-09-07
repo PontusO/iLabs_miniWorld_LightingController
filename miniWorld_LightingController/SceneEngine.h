@@ -27,11 +27,17 @@
     as the events, and a lamp that a flat lists is owned by the flat: its
     entry in _lampGroup is cleared, so the group path never sees it.
 
-    Alongside the simulation sits identify(): a lamp asked for by the GUI
-    blinks for a second and a quarter so it can be found on the layout. The
-    blink runs through the engine rather than around it, so the scene never
-    fights it: tick() steps the phases and skips that lamp in the per-lamp
-    loop while it blinks.
+    The room, not the lamp, is the unit inside a flat. Every draw a room
+    makes, the minutes around its moments and its life events alike, is
+    taken from the room's own key rather than from a lamp index, so all the
+    lamps of a room switch together and adding one does not reshuffle the
+    rest of the flat.
+
+    Alongside the simulation sits identify(): up to eight lamps asked for by
+    the GUI blink together for a second and a quarter so a lamp, or a whole
+    room, can be found on the layout. The blink runs through the engine
+    rather than around it, so the scene never fights it: tick() steps the
+    phases and skips those lamps in the per-lamp loop while they blink.
 
     Call tick() from loop() as often as you like; it rate-limits itself.
 
@@ -90,14 +96,18 @@ public:
     void setEnabled(bool on) { _enabled = on; }
     bool enabled() const { return _enabled; }
 
-    // Blink one lamp so it can be found on the layout: five phases of
-    // 250 ms, on, off, on, off, on, and then the lamp goes back to what it
-    // was. Nothing here waits: tick() drives the phases from millis(), and
-    // it drives them whether or not the engine is enabled, so a lamp can be
-    // found with the scene paused. One lamp at a time; a second call gives
-    // the first lamp back at once and starts over with the new one. A lamp
-    // outside the fitted range is ignored.
-    void identify(uint16_t lamp);
+    // Blink lamps so they can be found on the layout: five phases of 250 ms,
+    // on, off, on, off, on, and then every lamp goes back to what it was.
+    // Nothing here waits: tick() drives the phases from millis(), and it
+    // drives them whether or not the engine is enabled, so a lamp can be
+    // found with the scene paused. Up to IDENT_MAX_LAMPS lamps blink
+    // together, which is a whole room; one blink at a time, and a second
+    // call gives every lamp of the first one back at once and starts over.
+    // Lamps outside the fitted range are ignored, and a call with nothing
+    // left in it does not disturb a blink already running.
+    static constexpr uint8_t IDENT_MAX_LAMPS = ROOM_MAX_LAMPS;
+    void identify(const uint16_t *lamps, uint8_t n);
+    void identify(uint16_t lamp) { identify(&lamp, 1); }
 
     // Clock control that does not touch flash. Used by the scrubber.
     void setMode(ClockMode m);
@@ -136,7 +146,9 @@ private:
     int localOffsetMinutes() const;
 
     uint32_t hash(uint32_t a, uint32_t b) const;
-    float unit(uint16_t lamp, uint32_t salt) const;
+    // The key is a lamp index for the group path and a room key for the
+    // flat path, which is why it is wider than a lamp.
+    float unit(uint32_t key, uint32_t salt) const;
     float dayUnit(uint16_t lamp, uint32_t salt) const;
     // Per-flat, per-day value in [0, 1). Salts 1..8 are the day's draws.
     float flatUnit(uint8_t flat, uint16_t doy, uint32_t salt) const;
@@ -147,11 +159,12 @@ private:
     static bool inWindow(int t, int on, int off);
     int anchorBase(Anchor a, bool forOff) const;
 
-    // Which event, if any, covers minute m for this lamp. kind: 0 day, 1 dip,
-    // 2 night. Returns true when an event of that kind is active at m.
-    // windowFrom and windowTo are the lamp's night window, used only by the
-    // night kind, whose rate is spread over the length of that window.
-    bool eventAt(uint16_t lamp, int m, uint16_t doy, uint8_t kind, float rate,
+    // Which event, if any, covers minute m for this key: a lamp index for a
+    // group lamp, a room key for a room, so a room's lamps share one event.
+    // kind: 0 day, 1 dip, 2 night. Returns true when an event of that kind
+    // is active at m. windowFrom and windowTo are the night window, used
+    // only by the night kind, whose rate is spread over that window.
+    bool eventAt(uint32_t key, int m, uint16_t doy, uint8_t kind, float rate,
                  int windowFrom, int windowTo) const;
 
     void evaluateEvents();
@@ -165,18 +178,30 @@ private:
     // interval may start and gateTo the latest a morning interval may end;
     // -1 for either means the interval is not clipped by daylight.
     static bool span(int t, int from, int to, int gateFrom, int gateTo);
-    bool roomLit(const FlatDay &d, uint16_t lamp, Room role, int t, bool out,
+    // Asked once per room, with the room's key, so every lamp of the room
+    // gets the same answer at the same minute.
+    bool roomLit(const FlatDay &d, uint32_t key, Room role, int t, bool out,
                  bool &tv) const;
     void evaluateFlats();
     void evaluateFlatEvents(int m);
 
-    // The identify blink, one phase at a time. Writes to the lamp only when
+    // The identify blink, one phase at a time. Writes to the lamps only when
     // the phase changes, so calling it from every loop() costs a compare.
     void driveIdentify(uint32_t nowMs);
-    // Stop blinking: the lamp gets the level it had back and the scene
+    // Stop blinking: every lamp gets the level it had back and the scene
     // carries on fading it from there. A lamp that is no longer fitted is
     // simply let go.
     void releaseIdentify();
+    // Is this lamp blinking? Nothing blinking is no compares at all, which
+    // is the case the per-lamp loop is in almost always.
+    bool identifying(uint16_t lamp) const {
+        for (uint8_t i = 0; i < _identCount; i++) {
+            if (_identLamp[i] == lamp) {
+                return true;
+            }
+        }
+        return false;
+    }
 
     SceneConfig _cfg;
     bool _enabled = true;
@@ -203,9 +228,10 @@ private:
     uint16_t _eventSim = 0xFFFF;    // simulated minute the bitmaps were built for
     uint16_t _eventDoy = 0;
 
-    uint16_t _identLamp = 0xFFFF;   // lamp being blinked, 0xFFFF for none
+    uint16_t _identLamp[IDENT_MAX_LAMPS];   // the lamps being blinked
+    uint16_t _identSaved[IDENT_MAX_LAMPS];  // the levels to give back after
+    uint8_t _identCount = 0;        // how many of them, 0 for no blink
     uint32_t _identStart = 0;       // millis() the blink started at
-    uint16_t _identSaved = 0;       // the level to give back when it ends
     uint8_t _identPhase = 0xFF;     // phase last written, 0xFF = none yet
 
     uint32_t _startMs = 0;          // accelerated: when the sim day started

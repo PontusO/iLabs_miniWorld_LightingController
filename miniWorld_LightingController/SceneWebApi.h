@@ -15,7 +15,13 @@
       POST /api/scene/identify  { "lamp": n } blinks that lamp for a second
                                 and a quarter so it can be found on the
                                 layout, then gives it back to the scene.
-                                Returns { "ok": true, "lamp": n }.
+                                { "lamps": [n, ...] } blinks up to eight of
+                                them together, which is how a whole room is
+                                found. Each must be a fitted lamp; more than
+                                eight is "at most 8 lamps".
+                                Returns { "ok": true, "lamp": n,
+                                "lamps": [n, ...] }, where "lamp" is the
+                                first of them.
       GET  /api/scene/presets   default parameters per behaviour, for the
                                 group editor in the GUI, plus "households"
                                 (the rhythm per household type, no entry for

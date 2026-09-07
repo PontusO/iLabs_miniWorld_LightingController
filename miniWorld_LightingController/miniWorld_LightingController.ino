@@ -57,7 +57,7 @@ void setup() {
         }
     }
     if (Lamps.count() > 0 && sceneEmpty) {
-        // Static: a SceneConfig is about 4.8 kB, too much for the stack.
+        // Static: a SceneConfig is about 14 kB, too much for the stack.
         static SceneConfig s;
         auto group = [&](const char *name, Behaviour b, uint16_t from, uint16_t to) {
             GroupConfig &G = s.groups[s.groupCount++];
