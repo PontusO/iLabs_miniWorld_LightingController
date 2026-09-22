@@ -325,12 +325,12 @@ Open. Needs a flashed board, no phone or extra hardware.
   is what makes the 20 kB page arrive in well under a second, but the
   link has never actually run at it here. Watch the boot log for
   `net: esp link 921600` and for garbled AT traffic under load.
-- **RAM with models and units.** `SceneConfig` is about 12 kB now (12080
-  bytes with sixteen models and twenty-four units), and
-  there are five static copies of it. A clean build at HEAD, GUI
-  included, measured `Sketch uses 234380 bytes (3%)` and `Global
-  variables use 90656 bytes (34%)`. Adding a sixth static copy anywhere
-  must be avoided; reuse one of the five instead.
+- **RAM with models and units.** `SceneConfig` is 12080 bytes with
+  sixteen models and twenty-four units, about 12 kB, and there are five
+  static copies of it. A clean build at HEAD, GUI included, measured
+  `Sketch uses 234612 bytes (3%)` and `Global variables use 90720 bytes
+  (34%)`. Adding a sixth static copy anywhere must be avoided; reuse one
+  of the five instead.
 - **No civil dusk at 55.7 N around midsummer.** The engine falls back to
   23:00. A clock-anchored off earlier than that wraps, so the lamp reads
   lit for about 22 hours. Pre-existing, now visible because the activity

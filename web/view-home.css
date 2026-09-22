@@ -231,16 +231,7 @@
 /* From 720 px: six tiles a row, a larger clock, two columns below it. */
 
 @media (min-width: 720px) {
-    .view-home .scene-error {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    margin: 10px 0 0 0;
-    color: var(--fault);
-    font-size: 0.9rem;
-}
-
-.view-home .buses {
+    .view-home .buses {
         grid-template-columns: repeat(6, 1fr);
     }
 
