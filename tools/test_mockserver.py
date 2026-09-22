@@ -155,6 +155,27 @@ class MigrationTest(unittest.TestCase):
         self.assertEqual(model["litPercent"], 85)
         self.assertEqual(model["individual"], True)
 
+    def test_migration_of_an_empty_old_scene_seeds(self):
+        # An old board that was never set up stored {"groups": [], "flats":
+        # []}. It takes the migration branch and nothing crosses over, so
+        # the nine templates go in rather than an empty Models tab.
+        state = mockserver.SceneState()
+        state.apply_config({"groups": [], "flats": []})
+        out = state.config_json()
+        self.assertEqual(len(out["models"]), 9)
+        self.assertEqual(out["models"][0]["name"], "Family")
+        self.assertEqual(out["units"], [])
+
+    def test_migration_off_group_keeps_its_level(self):
+        # litPercent 0 is what keeps an Off group dark. The level stays the
+        # template's, so raising litPercent gives a usable model.
+        state = mockserver.SceneState()
+        state.apply_config({"groups": [{"name": "Dark", "behaviour": "off", "lamps": [5]}]})
+        out = state.config_json()
+        model = next(m for m in out["models"] if m["name"] == "Dark")
+        self.assertEqual(model["litPercent"], 0)
+        self.assertGreater(model["level"], 0)
+
 
 class StatusTest(unittest.TestCase):
     def test_status_units(self):
@@ -184,10 +205,82 @@ class StatusTest(unittest.TestCase):
         night, _ = mockserver.unit_status(shop_unit, shop_model, 22 * 60, True, dusk, dawn)
         self.assertEqual(night, "closed")
 
+        # Anchored to dusk and dawn, so the words are lit and dark and not
+        # open and closed, and with dusk at 19:58 both are decided: 22:00 is
+        # inside the window and noon is not.
         street_unit = next(u for u in state.units if u["model"] == "Street light")
         street_model = mockserver.MODEL_TEMPLATES["street"]
-        state_word, _ = mockserver.unit_status(street_unit, street_model, 22 * 60, True, dusk, dawn)
-        self.assertIn(state_word, ("lit", "dark"))
+        night, _ = mockserver.unit_status(street_unit, street_model, 22 * 60, True, dusk, dawn)
+        self.assertEqual(night, "lit")
+        day, _ = mockserver.unit_status(street_unit, street_model, 12 * 60, True, dusk, dawn)
+        self.assertEqual(day, "dark")
+
+    def test_hours_state_nobody_takes_part(self):
+        # litPercent 0, which is what an old Off group migrates to: clock
+        # windows of [0, 0] and [0, 0], which would otherwise read as open
+        # the whole day.
+        state = mockserver.SceneState()
+        dusk, dawn = 19 * 60 + 58, 5 * 60 + 47
+        unit = next(u for u in state.units if u["model"] == "Shop")
+        model = dict(mockserver.MODEL_TEMPLATES["shop"])
+        model["litPercent"] = 0
+        model["onAnchor"] = "clock"
+        model["offAnchor"] = "clock"
+        model["on"] = (0, 0)
+        model["off"] = (0, 0)
+        for minute in (0, 12 * 60, 22 * 60):
+            word, letters = mockserver.unit_status(unit, model, minute, True, dusk, dawn)
+            self.assertEqual(word, "closed")
+            self.assertEqual(letters, "")
+
+        model["onAnchor"] = "dusk"
+        word, _ = mockserver.unit_status(unit, model, 22 * 60, True, dusk, dawn)
+        self.assertEqual(word, "dark")
+
+
+class LoadErrorTest(unittest.TestCase):
+    """SceneEngine::loadError(), reported by /api/scene/status only when a
+    stored scene existed at boot and would not load."""
+
+    def test_status_has_no_load_error_by_default(self):
+        state = mockserver.SceneState()
+        self.assertIsNone(state.load_error)
+        self.assertNotIn("loadError", state.status_json())
+
+    def test_status_carries_the_load_error(self):
+        state = mockserver.SceneState()
+        state.load_error = "invalid JSON: IncompleteInput"
+        self.assertEqual(state.status_json()["loadError"],
+                         "invalid JSON: IncompleteInput")
+
+
+class ClampUnitsTest(unittest.TestCase):
+    """clamp_units() mirrors dedupUnitRooms(), which works inside one unit.
+    Two units overlapping is left alone here and settled by rebuild(), which
+    gives the lamp to the first unit that lists it."""
+
+    def test_overlap_between_units_is_kept(self):
+        units = [
+            {"name": "A", "building": "", "model": "Home",
+             "rooms": [{"ranges": [(0, 3)], "role": "other"}]},
+            {"name": "B", "building": "", "model": "Home",
+             "rooms": [{"ranges": [(2, 5)], "role": "other"}]},
+        ]
+        mockserver.clamp_units(units)
+        self.assertEqual(units[0]["rooms"][0]["ranges"], [(0, 3)])
+        self.assertEqual(units[1]["rooms"][0]["ranges"], [(2, 5)])
+        self.assertEqual(mockserver.unit_to_json(units[1])["rooms"][0]["lamps"],
+                         ["2-5"])
+
+    def test_overlap_inside_one_unit_is_removed(self):
+        units = [
+            {"name": "A", "building": "", "model": "Home",
+             "rooms": [{"ranges": [(0, 3)], "role": "other"},
+                       {"ranges": [(2, 5)], "role": "living"}]},
+        ]
+        mockserver.clamp_units(units)
+        self.assertEqual(units[0]["rooms"][0]["ranges"], [(0, 3)])
+        self.assertEqual(units[0]["rooms"][1]["ranges"], [(4, 5)])
 
 
 if __name__ == "__main__":

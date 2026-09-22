@@ -369,14 +369,15 @@
         }
 
         // A window end may be an offset from dusk or a clock minute past
-        // midnight, so the field is as wide as both.
+        // midnight, so the field is as wide as both: the bounds the
+        // firmware's clamp() uses for the hours windows, -720 to 2879.
         function winField(w) {
             grid.appendChild(fld(w[1], el("input", {
-                type: "number", min: -1440, max: 2880, value: getf(m, w[0]),
+                type: "number", min: -720, max: 2879, value: getf(m, w[0]),
                 oninput: function (ev) {
                     var v = parseInt(ev.target.value, 10);
                     if (isNaN(v)) return;
-                    setf(m, w[0], Math.max(-1440, Math.min(2880, v)));
+                    setf(m, w[0], Math.max(-720, Math.min(2879, v)));
                     sync();
                     touch();
                 }

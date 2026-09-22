@@ -623,14 +623,17 @@ def unit_from_json(o, models):
 
 
 def clamp_units(units):
-    """SceneConfig::clamp()'s dedupUnitRooms(): a lamp belongs to one unit
-    only, the first room of the first unit that lists it wins, and a room
-    left with nothing is not a room. Simplified from the firmware's
-    order-preserving range split: a claimed lamp is removed by expanding to
-    individual lamps and re-detecting runs, and anything past the
-    eight-range cap is dropped rather than refused, as clamp() does."""
-    claimed = set()
+    """SceneConfig::clamp()'s dedupUnitRooms(): within one unit a lamp
+    belongs to one room, the first room listing it wins, and a room left
+    with nothing is not a room. The claim set is per unit, as the firmware's
+    is: two units that list the same lamp both keep it in what they store,
+    and rebuild() settles who drives it, the first unit in the list.
+    Simplified from the firmware's order-preserving range split: a claimed
+    lamp is removed by expanding to individual lamps and re-detecting runs,
+    and anything past the eight-range cap is dropped rather than refused, as
+    clamp() does."""
     for u in units:
+        claimed = set()
         kept = []
         for room in u["rooms"]:
             lamps = []
@@ -764,9 +767,12 @@ def migrate_group(o):
     m = make_model(tmpl_key)
     if bl == "off":
         # Off: lit by nothing, at no time, with no life on top.
+        # The level stays what the template set. litPercent 0 already keeps
+        # every lamp dark, and a level of 0 would leave the model unusable
+        # the moment somebody raised litPercent to look at it.
         m.update(onAnchor="clock", on=(0, 0), offAnchor="clock", off=(0, 0),
                  litPercent=0, flickerPercent=0, morning=False,
-                 level=0, fadeMs=800, dayActivity=0, nightActivity=0)
+                 fadeMs=800, dayActivity=0, nightActivity=0)
     # Every lamp of a group kept its own moment inside the windows, its own
     # chance of taking part and its own television.
     m["individual"] = True
@@ -857,6 +863,13 @@ def migrate_old(data):
         if can_place and rooms:
             units.append({"name": m["name"], "building": "", "model": m["name"], "rooms": rooms})
 
+    # An old scene that had neither a group nor a flat, which is what a
+    # board that was never set up stored. Nothing crosses over and the
+    # sketch does not seed, because the file exists, so the templates are
+    # put in here instead of coming up with an empty Models tab.
+    if not models and not units:
+        models = [make_model(k) for k in TEMPLATE_KEYS]
+
     return models, units
 
 
@@ -927,6 +940,11 @@ def unit_status(u, model, minutes, is_weekday, dusk, dawn):
         on, off = _hours_window(model, dusk, dawn)
         lit = _in_window(m, on, off)
         by_clock = model["onAnchor"] == "clock" and model["offAnchor"] == "clock"
+        # A model no lamp takes part in is never lit, whatever its windows
+        # say. An old Off group migrates to clock windows of [0, 0] and
+        # [0, 0], which would otherwise read as open all day.
+        if model["litPercent"] == 0:
+            return ("closed" if by_clock else "dark"), ""
         state = ("open" if lit else "closed") if by_clock else ("lit" if lit else "dark")
         letters = [ROOM_LETTERS[r] for r in ROOM_NAMES if r in roles_present] if lit else []
         return state, "".join(letters)
@@ -1018,6 +1036,12 @@ class SceneState:
         self.dayOfYearOverride = 172
         self.seed = 1
         self.enabled = True
+
+        # SceneEngine::loadError(): why a stored scene would not load at
+        # boot. None on a device whose scene loaded or that had nothing
+        # stored, and then the status carries no "loadError" key at all.
+        # The mock never fails a load by itself; a test sets this.
+        self.load_error = None
 
         # The nine templates and no units is what a fresh device runs,
         # spec 2.3; the mock seeds the example town on top, spec 4.5.
@@ -1130,7 +1154,7 @@ class SceneState:
             return 0
         frac = self.lit_fraction(minutes, dusk, dawn)
         lit = int(round(frac * self.total_lamps() * 0.85))
-        # The seeded groups cover more lamps than the seeded hardware has,
+        # The seeded units cover more lamps than the seeded hardware has,
         # so clamp to the hardware count; the Home view reads this as
         # "<lit> of <lamps> lit" and must never show more than the total.
         return min(lit, LAMPS.lamp_count())
@@ -1187,7 +1211,7 @@ class SceneState:
                     continue
                 state, lit = unit_status(u, self.models[mi], minutes, is_weekday, dusk, dawn)
                 units_status.append({"name": u["name"], "state": state, "lit": lit})
-            return {
+            out = {
                 "time": fmt_time(minutes),
                 "minutes": int(round(minutes)),
                 "dayOfYear": self.day_of_year(),
@@ -1204,6 +1228,9 @@ class SceneState:
                 "lamps": LAMPS.lamp_count(),
                 "units": units_status,
             }
+            if self.load_error:
+                out["loadError"] = self.load_error
+            return out
 
     def apply_config(self, data):
         if not isinstance(data, dict):

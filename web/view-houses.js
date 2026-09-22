@@ -661,7 +661,7 @@
 
     // The lamp list goes back as the device writes it: numbers and "a-b".
     // A street written out as sixty integers would be sixty times the
-    // characters, and the whole document has to fit the 8 kB body the
+    // characters, and the whole document has to fit the 16 kB body the
     // server reads.
     function lampsJson(list) {
         var text = App.rangesText(list);

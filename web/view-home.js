@@ -61,6 +61,11 @@
         var lamp = el("span", { class: "town-lamp off" });
         var caption = el("p", { class: "clock-caption" }, "waiting for the controller");
         var count = el("p", { class: "clock-count tnum" }, "0 of 0 lamps lit");
+        // Only there when the status carries "loadError": the device found
+        // a stored scene at boot and could not read it, so the town is
+        // empty and the file has been left alone.
+        var loadError = el("p", { class: "scene-error", hidden: true },
+            el("span", { class: "glyph" }, "!"), el("span", null, ""));
         var devices = el("span", { class: "head-note tnum" }, "");
         var mode = netRow("mode");
         var name = netRow("network");
@@ -82,7 +87,8 @@
 
         root.appendChild(el("div", { class: "view-home" },
             el("section", { class: "card clock" },
-                el("div", { class: "clock-face" }, time, lamp), caption, count),
+                el("div", { class: "clock-face" }, time, lamp), caption, count,
+                loadError),
             el("section", { class: "card" },
                 el("h2", null, "Buses", devices), grid),
             unitBox,
@@ -102,7 +108,9 @@
 
         r = {
             time: time, lamp: lamp, caption: caption, count: count, tiles: tiles,
-            devices: devices, unitBox: unitBox, unitList: unitList,
+            devices: devices, loadError: loadError,
+            loadErrorText: loadError.lastChild,
+            unitBox: unitBox, unitList: unitList,
             unitKey: null, chips: [],
             mode: mode.value, name: name.value,
             nameLabel: name.name, ip: ip.value, sys: sys.value,
@@ -180,6 +188,9 @@
             " · dusk " + (s.dusk || "--:--") + " · dawn " + (s.dawn || "--:--"));
         setText(r.count, (s.lit || 0) + " of " + (s.lamps || 0) + " lamps lit");
         if (!writing && r.input.checked !== !!s.enabled) r.input.checked = !!s.enabled;
+        var why = s.loadError || "";
+        r.loadError.hidden = !why;
+        if (why) setText(r.loadErrorText, "stored scene not loaded: " + why);
     }
 
     // One chip per unit: the name, a shape for the state and the rooms
