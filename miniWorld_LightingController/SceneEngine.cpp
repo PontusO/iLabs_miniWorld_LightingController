@@ -937,13 +937,19 @@ void SceneEngine::evaluateUnitEvents(int m) {
 
             // One draw for the room; the bitmaps below are per lamp.
             uint32_t key = roomKey(u, r);
+            bool morningLit = false;
             if (!rhythm) {
                 // The night of a room under an hours model is the room's
                 // own, as a lamp's is on the per-lamp path: from its off
                 // moment to 05:30, or to its morning light if that is
-                // sooner.
+                // sooner. targetLevel() rather than lampMoments(), because
+                // it is what says whether the morning light is what has the
+                // room lit; it is the same draw evaluateUnits() made, from
+                // the same key, so the answer is the one in the bitmap.
+                bool flicker = false;
                 LampMoments mo;
-                lampMoments(key, M, mo);
+                targetLevel(key, M, flicker, mo);
+                morningLit = mo.morningLit;
                 nightFrom = mo.off;
                 nightTo = 1440 + 330;
                 if (mo.morningApplies && mo.morningOn + 1440 < nightTo) {
@@ -955,6 +961,12 @@ void SceneEngine::evaluateUnitEvents(int m) {
             bool hit;
             bool on;
             if (lit) {
+                // Lit: someone can leave the room for a moment. Not during
+                // the morning light, which is a short errand already, just
+                // as on the per-lamp path.
+                if (morningLit) {
+                    continue;
+                }
                 hit = eventAt(key, m, _doy, EVENT_DIP,
                               dipRate[dayLevel] * roomDipRate[role], 0, 0);
                 on = false;
