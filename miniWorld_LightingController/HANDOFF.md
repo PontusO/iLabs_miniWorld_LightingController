@@ -173,8 +173,9 @@ Changes:
 - `Lamps::probe()`: per bus, ping 0x20 and 0x30..0x33, stop AL5887 count
   at first non-responder.
 - `LAMPS_MAX_LAMPS` 512 → 2048 (12 × (16 + 4 × 36) = 1920). Adjust
-  `Scene` bitmaps (`lampBits` becomes 256 bytes per group) and the
-  engine's per-lamp arrays. About 12 kB extra RAM total.
+  `Scene` bitmaps (`lampBits` becomes 256 bytes per group; groups are
+  gone since 2026-09-22, see §8) and the engine's per-lamp arrays. About
+  12 kB extra RAM total.
 - `LampWebApi::statusJson`: faults becomes per device in lamp order, plus
   a per-bus summary.
 - The Lamps view (`web/view-lamps.js`, which replaced `lamps.html`):
@@ -324,8 +325,8 @@ Open. Needs a flashed board, no phone or extra hardware.
   link has never actually run at it here. Watch the boot log for
   `net: esp link 921600` and for garbled AT traffic under load.
 - **RAM with models and units.** `SceneConfig` is about 16 kB now, and
-  there are five static copies of it. A clean build after the models and
-  units work measured `Sketch uses 234044 bytes (3%)` and `Global
+  there are five static copies of it. A clean build at HEAD, GUI
+  included, measured `Sketch uses 234380 bytes (3%)` and `Global
   variables use 90656 bytes (34%)`. Adding a sixth static copy anywhere
   must be avoided; reuse one of the five instead.
 - **No civil dusk at 55.7 N around midsummer.** The engine falls back to

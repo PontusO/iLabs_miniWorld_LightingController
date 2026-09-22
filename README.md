@@ -51,8 +51,8 @@ document for the whole project and the place to start reading.
   living there evening after evening, with a little daily jitter.
 - **Units.** A unit is a thing on the layout: a name, a building label,
   the model it runs, and rooms of lamp ranges. The Anderssons at
-  Storgatan 3 are a unit on the Elderly couple model; the shop on the
-  corner and a whole street of lamps are units too, each on an hours
+  Storgatan 3 are a unit on the Family model; the shop on the corner and
+  a whole street of lamps are units too, each on an hours
   model. A rhythm unit's rooms light in order: kitchen for the coffee,
   hall on the way out, living room in the evening, bedroom last. Seen in
   the Houses tab and as chips on the Home strip.
