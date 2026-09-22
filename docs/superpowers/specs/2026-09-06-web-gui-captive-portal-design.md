@@ -41,7 +41,8 @@ lamp editing, user accounts, any framework or external asset.
   `Serial1` is never started. Serial2 is the ESP link.
 - RAM: RP2040 has 264 kB. The per-bus rework raises `LAMPS_MAX_LAMPS` to
   2048 (about 12 kB more). The HTTP server keeps one request body of at
-  most 8 kB.
+  most 8 kB (raised to 16 kB by the models and units change, so a scene
+  at the advertised limits fits).
 
 ## 3. Device side
 
@@ -197,7 +198,8 @@ Request parsing:
   `Host`, `If-None-Match`, `Accept-Encoding`. Others skipped. Header
   lines over 512 bytes cause 431.
 - Body up to 8192 bytes read into a `String`; more causes 413 and the
-  connection is closed.
+  connection is closed. The models and units change raised this to
+  16384.
 - Read timeout 2 s per stage; a stalled client is dropped.
 
 Routing, in order:

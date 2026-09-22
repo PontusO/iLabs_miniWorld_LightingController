@@ -40,6 +40,12 @@ void SceneWebApi::statusJson(String &body) {
     doc["active"] = Scene.activeCount();
     doc["lamps"] = Lamps.count();
 
+    // Only when there is one, so a healthy device answers exactly what it
+    // answered before this key existed.
+    if (Scene.loadError()[0]) {
+        doc["loadError"] = Scene.loadError();
+    }
+
     // One entry per unit, in config order: what it is doing and which of
     // its rooms are lit right now.
     JsonArray us = doc["units"].to<JsonArray>();
@@ -62,7 +68,7 @@ int SceneWebApi::getConfig(String &body) {
 }
 
 int SceneWebApi::putConfig(const String &in, String &body) {
-    // Static: a SceneConfig is about 14 kB and the core-0 stack is far
+    // Static: a SceneConfig is about 12 kB and the core-0 stack is far
     // smaller. One request is served at a time, so this never nests.
     static SceneConfig cfg;
     cfg = Scene.config();

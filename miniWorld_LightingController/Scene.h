@@ -86,6 +86,15 @@
     to indices on load, so renaming a model has to rename it in the units
     that use it in the same save.
 
+    A document may carry either list, both or neither. Only "units" applies
+    them against the models already held. Only "models" re-resolves the
+    units held by the model names they were following, and drops a unit
+    whose model name is no longer in the list, so a rename that does not
+    send the units drops the units that followed the old name. Neither
+    leaves both lists as they were. A document whose units name a model the
+    document does not keep is refused with "unknown model", which is what
+    stops a save from deleting a model still in use.
+
     Groups and flats, which models and units replaced, are still read: a
     document with "groups" or "flats" and no "models" is migrated on load,
     and the next save writes the new shape. There is no path back.

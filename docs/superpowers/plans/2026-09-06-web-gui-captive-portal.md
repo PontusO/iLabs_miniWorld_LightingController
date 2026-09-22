@@ -547,7 +547,7 @@ extern HttpServer Http;
 
 - [ ] **Step 1: Write request reading**
 
-`readLine`: read bytes until `\n` with a 2 s deadline (`millis()` based, `yield()` while waiting), strip `\r`, return false on timeout; if the line exceeds `maxLen` set the flag and keep discarding to end of line. Request line `maxLen` 1024, header lines 512. Split the request line on spaces; strip a `?query` from the path. Loop headers until an empty line, matching case-insensitively on `Content-Length:`, `Authorization:`, `Host:`, `If-None-Match:`. If `contentLength > 8192` set `tooLarge` and do not read the body. Otherwise read exactly `contentLength` bytes with the same deadline.
+`readLine`: read bytes until `\n` with a 2 s deadline (`millis()` based, `yield()` while waiting), strip `\r`, return false on timeout; if the line exceeds `maxLen` set the flag and keep discarding to end of line. Request line `maxLen` 1024, header lines 512. Split the request line on spaces; strip a `?query` from the path. Loop headers until an empty line, matching case-insensitively on `Content-Length:`, `Authorization:`, `Host:`, `If-None-Match:`. If `contentLength > 8192` set `tooLarge` and do not read the body (the models and units change raised that bound to 16384). Otherwise read exactly `contentLength` bytes with the same deadline.
 
 - [ ] **Step 2: Write auth**
 

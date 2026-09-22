@@ -16,11 +16,13 @@
 HttpServer Http;
 
 // Limits from the design. The body limit is what a whole scene or lamp
-// configuration needs with room to spare.
+// configuration needs with room to spare: a scene at the advertised
+// limits, sixteen models and twenty-four units of five rooms, is about
+// 9.6 kB of JSON.
 static const size_t   REQUEST_LINE_MAX = 1024;
 static const size_t   HEADER_LINE_MAX  = 512;
 static const uint8_t  HEADER_LINES_MAX = 32;
-static const size_t   BODY_MAX         = 8192;
+static const size_t   BODY_MAX         = 16384;
 static const uint32_t READ_TIMEOUT_MS  = 2000;   // silence at one stage
 static const uint32_t REQUEST_TIMEOUT_MS = 5000; // the whole request
 static const uint32_t CONN_POLL_MS     = 50;     // connected() is an AT round trip

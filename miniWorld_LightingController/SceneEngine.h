@@ -146,6 +146,11 @@ public:
     uint8_t unitOwner(uint16_t lamp) const {
         return lamp < LAMPS_MAX_LAMPS ? _lampUnit[lamp] : 0xFF;
     }
+    // Why the stored scene did not load at boot, and an empty string when
+    // there was nothing stored or it loaded. The console says this once;
+    // the status API repeats it, because a board that came up with an empty
+    // town should say so in the GUI and not only on a cable.
+    const char *loadError() const { return _loadError; }
 
 private:
     void rebuild();
@@ -216,6 +221,10 @@ private:
 
     SceneConfig _cfg;
     bool _enabled = true;
+    // A fixed array and not a String: this is written once at boot and read
+    // by every status request, and a String member would grow the heap for
+    // a message that is never longer than a filename and a reason.
+    char _loadError[64] = { 0 };
 
     uint8_t _lampUnit[LAMPS_MAX_LAMPS];     // 0xFF = not in any unit
     uint16_t _current[LAMPS_MAX_LAMPS];     // level actually sent

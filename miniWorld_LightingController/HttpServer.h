@@ -19,7 +19,7 @@
       - Headers until the blank line. Content-Length, Authorization, Host
         and If-None-Match are kept, everything else is skipped. A header
         line over 512 bytes, or more than 32 of them, gives 431.
-      - Body up to 8192 bytes. More gives 413 and the body is not read.
+      - Body up to 16384 bytes. More gives 413 and the body is not read.
       - Two seconds without a byte at any stage drops the connection, and so
         does a whole request that takes more than five seconds, so a client
         dribbling a byte at a time cannot stall the scene.

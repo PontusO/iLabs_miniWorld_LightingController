@@ -249,9 +249,11 @@ activity words as today.
 
 "New model" asks which template to start from, gives it the template's
 name with a number if that name is taken, and opens the row. "Delete"
-is refused with a toast while any unit uses the model; the firmware
-refuses the same save with `model in use`. Renaming updates the
-references in the units in the same payload before Save.
+is refused with a toast, "model in use", while any unit uses the model;
+that check is the GUI's own. The firmware refuses the same save with
+`unknown model`, because what reaches it is a unit naming a model the
+document does not carry. Renaming updates the references in the units in
+the same payload before Save.
 
 Save writes the whole scene document, as the other tabs do.
 
@@ -326,8 +328,11 @@ group, of which only Flats also has a unit.
   a complete model object) and `"rooms"` as today. The old per-behaviour
   and `"households"` keys go.
 - `POST /api/scene/identify` and `PUT /api/scene/clock` unchanged.
-- Errors added: `unknown model`, `duplicate model name`, `model in use`,
-  `too many models`, `too many units`, `too many ranges`.
+- Errors added: `unknown model`, `duplicate model name`, `too many
+  models`, `too many units`, `too many ranges`. There is no `model in
+  use`: a save that drops a model some unit still names is refused with
+  `unknown model`, and "model in use" is a toast the GUI raises before
+  such a save is ever sent.
 
 ## 7. Verification
 
@@ -421,7 +426,10 @@ room's own off moment to its on moment, as a group lamp's is today.
 the window built from the middle of each range: `anchorBase(on) +
 (onFrom + onTo) / 2` to `anchorBase(off) + (offFrom + offTo) / 2`. It
 does not look at `litPercent`, so a shop whose every lamp opted out is
-still "open"; the letters below say what is actually lit.
+still "open"; the letters below say what is actually lit. The one
+exception is `litPercent` 0, a unit no lamp takes part in at all: it
+reports "closed" when both anchors are clock and "dark" otherwise, which
+is what an old Off group migrates to.
 
 ### 9.4 Lit letters for any unit
 

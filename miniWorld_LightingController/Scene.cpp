@@ -13,6 +13,12 @@
 static_assert(SCENE_MAX_MODELS >= (int)Template::COUNT,
               "the template models have to fit in the model table");
 
+// The figure the comments on the static copies quote. Five of them live in
+// RAM, so a change that pushes this up is a change to the board's RAM
+// budget and has to be looked at rather than noticed on the bench.
+static_assert(sizeof(SceneConfig) <= 13 * 1024,
+              "SceneConfig has grown past the 12 kB the comments state");
+
 // ---------------------------------------------------------------------------
 // Templates. These are the "habits" of each kind of building: four
 // households and five sets of opening hours. Everything here can be
@@ -908,7 +914,9 @@ static bool migrateGroup(JsonObjectConst o, ModelConfig &M, UnitConfig *U,
         M.litPercent = 0;
         M.flickerPercent = 0;
         M.morning = false;
-        M.level = 0;
+        // The level stays what the template set. litPercent 0 already
+        // keeps every lamp dark, and a level of 0 would leave the model
+        // unusable the moment somebody raised litPercent to look at it.
         M.fadeMs = 800;
         M.dayActivity = 0;
         M.nightActivity = 0;
@@ -1006,7 +1014,7 @@ bool SceneConfig::fromJson(const String &in, String *error) {
         return false;
     }
 
-    // Static: a SceneConfig is about 16 kB and the core-0 stack is far
+    // Static: a SceneConfig is about 12 kB and the core-0 stack is far
     // smaller. The sketch is single-threaded and fromJson() never nests with
     // itself, so one working copy can be shared.
     static SceneConfig next;
@@ -1280,6 +1288,15 @@ bool SceneConfig::fromJson(const String &in, String *error) {
                 next.unitCount++;
             }
         }
+
+        // An old scene that had neither a group nor a flat, which is what
+        // a board that was never set up stored. The migration has nothing
+        // to carry across and the sketch does not seed, because the file
+        // exists, so the templates are put in here instead of coming up
+        // with an empty Models tab.
+        if (next.modelCount == 0 && next.unitCount == 0) {
+            next.seedTemplates();
+        }
     }
     // A document with none of the three keys leaves the models and the
     // units as they were, which is what a clock-only save looks like.
@@ -1318,7 +1335,7 @@ bool SceneStore::load(SceneConfig &cfg, String *error) {
     f.close();
 
     // Parsed straight into cfg, with no intermediate copy: a SceneConfig is
-    // about 16 kB, too much for the stack, and fromJson() only commits on
+    // about 12 kB, too much for the stack, and fromJson() only commits on
     // success, so cfg is untouched when the file does not parse.
     return cfg.fromJson(body, error);
 }

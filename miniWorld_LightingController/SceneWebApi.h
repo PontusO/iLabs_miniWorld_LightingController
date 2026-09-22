@@ -4,7 +4,18 @@
     Routes:
 
       GET  /api/scene/config    the running scene as JSON (see Scene.h)
-      PUT  /api/scene/config    replace it and store it
+      PUT  /api/scene/config    replace it and store it. The document may be
+                                partial. One with only "units" is applied
+                                against the models the scene already has.
+                                One with only "models" re-resolves the
+                                existing units by the model names they were
+                                following and drops a unit whose model name
+                                is gone, so renaming a model without sending
+                                the units drops the units that followed the
+                                old name. One with neither leaves models and
+                                units as they were. A save that removes a
+                                model some sent unit still names is refused
+                                with "unknown model".
       GET  /api/scene/status    where the simulation is right now
       PUT  /api/scene/clock     drive the clock without touching flash:
                                 { "mode": "manual", "time": "19:40" }
@@ -39,6 +50,11 @@
 
     "active" is the number of lamps currently inside a short activity event:
     a daytime light, an evening dip or a night wake-up.
+
+    "loadError" is there only when a stored /scene.json existed at boot and
+    would not load, and carries the loader's reason. The scene is then the
+    empty one and the file has been left exactly as it is. A device whose
+    scene loaded, or that had nothing stored, does not send the key at all.
 
     A unit's "state" is "asleep", "out", "awake", or "away" under a rhythm
     model, and "open" or "closed" under an hours model that is anchored to

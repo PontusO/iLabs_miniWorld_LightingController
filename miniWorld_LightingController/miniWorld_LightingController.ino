@@ -51,7 +51,7 @@ void setup() {
     // scene is empty, and seeding over the file would throw away the one
     // copy of what somebody built.
     if (!SceneStore::exists()) {
-        // Static: a SceneConfig is about 16 kB, too much for the stack.
+        // Static: a SceneConfig is about 12 kB, too much for the stack.
         static SceneConfig s;
         s.seedTemplates();
         Scene.apply(s, true);

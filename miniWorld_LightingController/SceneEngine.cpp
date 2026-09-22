@@ -23,7 +23,7 @@ SceneEngine Scene;
 // ---------------------------------------------------------------------------
 
 bool SceneEngine::begin() {
-    // Static: a SceneConfig is about 16 kB and the core-0 stack is far
+    // Static: a SceneConfig is about 12 kB and the core-0 stack is far
     // smaller. The sketch is single-threaded and begin() runs once, from
     // setup(), so this never nests with itself.
     static SceneConfig cfg;
@@ -34,9 +34,12 @@ bool SceneEngine::begin() {
     // this nobody would know which of the two had happened.
     if (!had && SceneStore::exists()) {
         Serial.printf("scene: %s not loaded: %s\n", SceneStore::path(), why.c_str());
+        strlcpy(_loadError, why.c_str(), sizeof(_loadError));
+    } else {
+        _loadError[0] = 0;
     }
     // One call rather than a ternary with SceneConfig(): the temporary would
-    // put another 16 kB on the stack. load() leaves cfg at its defaults when
+    // put another 12 kB on the stack. load() leaves cfg at its defaults when
     // there is nothing stored or the file does not parse.
     apply(cfg, false);
     return had;
@@ -1032,6 +1035,12 @@ const char *SceneEngine::unitState(uint8_t unit) const {
         }
         bool lit = inWindow(t, on, off);
         bool byTheClock = (M.onAnchor == Anchor::Clock && M.offAnchor == Anchor::Clock);
+        // A model no lamp takes part in is never lit, whatever its windows
+        // say. An old Off group migrates to clock windows of [0, 0] and
+        // [0, 0], which would otherwise read as open all day.
+        if (M.litPercent == 0) {
+            return byTheClock ? "closed" : "dark";
+        }
         if (byTheClock) {
             return lit ? "open" : "closed";
         }

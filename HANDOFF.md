@@ -77,7 +77,7 @@ it, and every web API stays a pure `(method, path, body)` function.
 | `Sun.h/.cpp` | Sunrise/sunset/civil twilight | **Verified** against Lund almanac |
 | `Scene.h/.cpp` | Models (rhythm and hours, up to 16, no lamps of their own) and units (up to 24, a name, a building, a model, rooms of up to 8 lamp ranges), clock, location, seed, JSON | Compiles, reviewed, not yet run on hardware |
 | `SceneEngine.h/.cpp` | The simulation, plus the event layer (day lights, dips, night wake-ups) and `evaluateUnits()` for a unit's rooms: one draw per room for a rhythm unit or a non-individual hours unit, one draw per lamp for an individual hours unit | Compiles, reviewed, not yet run on hardware |
-| `SceneWebApi.h/.cpp` | `/api/scene/config, status, clock, identify, presets`; `status` reports units, not groups or flats; `presets` returns the nine model templates; `identify` blinks one lamp, or up to eight of them, so a lamp or a whole room can be found on the layout | Done |
+| `SceneWebApi.h/.cpp` | `/api/scene/config, status, clock, identify, presets`; `status` reports units, not groups or flats, and carries `loadError`, the loader's reason, only when a stored scene existed at boot and would not load; `presets` returns the nine model templates; `identify` blinks one lamp, or up to eight of them, so a lamp or a whole room can be found on the layout | Done |
 | `NetConfig.h/.cpp` | `/net.json`: credentials, hostname, GUI password, NTP, TZ | Compiles, reviewed |
 | `NetDefaults.h` | Compile-time default network for a board with no `/net.json`; gitignored, copy `NetDefaults.example.h` | Done |
 | `NetManager.h/.cpp` | WiFi state machine, portal AP, SNTP, mDNS, global `Net` | Compiles, reviewed, not yet on a phone |
@@ -282,7 +282,8 @@ Open. Needs a flashed board, no phone or extra hardware.
 1. Mock: `make check` passes; loading the pre-change fixture through the
    migration gives the units and models the design spec's migration
    section describes.
-2. Firmware: `make` clean, RAM at or under today's 34 %.
+2. Firmware: `make` clean, RAM at or under the 39 % before this change
+   (measured 34 %).
 3. Board: flash, watch the boot load migrate the stored scene, then
    scrub 05:00 to 23:30 in one-minute steps and compare each unit's
    `state` and `lit` against a scrub recorded before flashing. They must
@@ -324,7 +325,8 @@ Open. Needs a flashed board, no phone or extra hardware.
   is what makes the 20 kB page arrive in well under a second, but the
   link has never actually run at it here. Watch the boot log for
   `net: esp link 921600` and for garbled AT traffic under load.
-- **RAM with models and units.** `SceneConfig` is about 16 kB now, and
+- **RAM with models and units.** `SceneConfig` is about 12 kB now (12080
+  bytes with sixteen models and twenty-four units), and
   there are five static copies of it. A clean build at HEAD, GUI
   included, measured `Sketch uses 234380 bytes (3%)` and `Global
   variables use 90656 bytes (34%)`. Adding a sixth static copy anywhere
