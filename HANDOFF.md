@@ -328,7 +328,7 @@ Open. Needs a flashed board, no phone or extra hardware.
 - **RAM with models and units.** `SceneConfig` is 12080 bytes with
   sixteen models and twenty-four units, about 12 kB, and there are five
   static copies of it. A clean build at HEAD, GUI included, measured
-  `Sketch uses 234612 bytes (3%)` and `Global variables use 90720 bytes
+  `Sketch uses 234604 bytes (3%)` and `Global variables use 90720 bytes
   (34%)`. Adding a sixth static copy anywhere must be avoided; reuse one
   of the five instead.
 - **No civil dusk at 55.7 N around midsummer.** The engine falls back to
