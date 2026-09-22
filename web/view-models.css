@@ -1,0 +1,227 @@
+/*
+    view-models.css - the Models view. A row is what the model is called
+    and what kind it is on the first line, what it does and how many units
+    use it on the second. Every selector sits under .view-models.
+
+    Invector Embedded Systems AB
+*/
+
+.view-models h2 { font-size: 1.05em; font-weight: 600; margin: 0 0 8px 0; }
+
+.view-models h3 {
+    margin: 14px 0 8px 0;
+    font-size: 0.9em;
+    font-weight: 600;
+}
+
+.view-models .hint {
+    color: var(--muted);
+    font-size: 0.85em;
+    max-width: 58ch;
+    margin: 8px 0;
+}
+
+.view-models .chead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+
+/* ------------------------------------------------------------- rows --- */
+
+.view-models .model { border-bottom: 1px solid var(--line); }
+.view-models .model:last-child { border-bottom: 0; }
+
+/* Two lines at any width: the name and the kind, then what the model does
+   with the number of units using it held to the right. */
+.view-models .mrow {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+        "name kind"
+        "sum  count";
+    gap: 3px 10px;
+    align-items: center;
+    width: 100%;
+    min-height: 44px;
+    padding: 9px 20px 9px 0;
+    background: transparent;
+    border: 0;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+/* A caret, so open and closed differ in shape and not only in colour. */
+.view-models .mrow::after {
+    content: "";
+    position: absolute;
+    right: 2px;
+    top: 18px;
+    width: 0;
+    height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 6px solid var(--muted);
+    transition: transform var(--transition-fast);
+}
+
+.view-models .mrow[aria-expanded="true"]::after {
+    transform: rotate(180deg);
+    border-top-color: var(--accent);
+}
+
+.view-models .mname {
+    grid-area: name;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.view-models .mkind {
+    grid-area: kind;
+    justify-self: end;
+    padding: 2px 9px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    color: var(--muted);
+    font-size: 0.78em;
+}
+
+.view-models .msum {
+    grid-area: sum;
+    color: var(--muted);
+    font-size: 0.85em;
+}
+
+.view-models .mcount {
+    grid-area: count;
+    justify-self: end;
+    align-self: start;
+    color: var(--muted);
+    font-size: 0.85em;
+    white-space: nowrap;
+}
+
+/* --------------------------------------------------- new model, from --- */
+
+.view-models .pick {
+    margin: 6px 0 10px 0;
+    padding: 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--bg);
+}
+
+.view-models .pick .hint { margin: 0 0 8px 0; }
+
+.view-models .picks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.view-models .pickb {
+    min-height: 44px;
+    padding: 0 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    font-size: 0.95em;
+    cursor: pointer;
+}
+
+.view-models .pickb:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ----------------------------------------------------------- editor --- */
+
+.view-models .mform { padding: 2px 0 14px 0; }
+
+.view-models .mform .field > span { color: var(--muted); font-size: 0.85em; }
+.view-models input[type="number"],
+.view-models .tin { font-variant-numeric: tabular-nums; }
+
+.view-models .mg {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 0 10px;
+}
+
+.view-models .field.wk .switch { align-self: flex-start; margin-top: 8px; }
+
+/* The one field with a sentence for a label takes the whole width. */
+.view-models .field.own { grid-column: 1 / -1; max-width: 58ch; }
+
+/* A rhythm range reads as one line: what it is, from, to. */
+.view-models .rng {
+    display: grid;
+    grid-template-columns: 60px 1fr 1fr;
+    gap: 0 10px;
+    align-items: center;
+}
+
+.view-models .rlab { color: var(--text); font-size: 0.9em; }
+
+.view-models .rhythm { margin-bottom: 4px; }
+
+.view-models .tin {
+    width: 100%;
+    min-height: 44px;
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--text);
+    font: inherit;
+    font-size: 1em;
+}
+
+.view-models .aline {
+    margin: 0;
+    max-width: 58ch;
+    color: var(--muted);
+    font-size: 0.85em;
+}
+
+.view-models .err {
+    margin: 0 0 8px 0;
+    color: var(--fault);
+    font-size: 0.85em;
+}
+
+.view-models .btn.danger {
+    background: transparent;
+    border-color: var(--fault);
+    color: var(--fault);
+    margin-top: 14px;
+}
+
+.view-models .actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 14px;
+}
+
+.view-models .mark { color: var(--accent); font-size: 0.85em; }
+
+.view-models .mark:not(:empty)::before {
+    content: "";
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    margin-right: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+}
+
+@media (min-width: 720px) {
+    .view-models .rng { grid-template-columns: 80px 1fr 1fr; max-width: 460px; }
+}

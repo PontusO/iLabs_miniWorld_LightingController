@@ -1,7 +1,7 @@
 /*
     view-scene.css - the Scene view. The scrubber is the one loud element:
     a strip of sky from midnight to midnight with the sun riding it. The
-    group editor around it stays quiet.
+    location card under it stays quiet.
 
     Invector Embedded Systems AB
 */
@@ -189,129 +189,7 @@
 
 .view-scene .readout { color: var(--muted); font-size: 0.85em; }
 
-/* ------------------------------------------------------------ groups --- */
-
-.view-scene .chead {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    margin-bottom: 4px;
-}
-
-.view-scene .grp { border-bottom: 1px solid var(--line); }
-.view-scene .grp:last-child { border-bottom: 0; }
-
-.view-scene .grow {
-    display: grid;
-    grid-template-columns: 1fr auto auto 12px;
-    align-items: center;
-    gap: 10px;
-    width: 100%;
-    min-height: 44px;
-    padding: 8px 0;
-    background: transparent;
-    border: 0;
-    color: inherit;
-    font: inherit;
-    text-align: left;
-    cursor: pointer;
-}
-
-/* A caret, so open and closed differ in shape and not only in colour. */
-.view-scene .grow::after {
-    content: "";
-    width: 0;
-    height: 0;
-    border-left: 5px solid transparent;
-    border-right: 5px solid transparent;
-    border-top: 6px solid var(--muted);
-    transition: transform var(--transition-fast);
-}
-
-.view-scene .grow[aria-expanded="true"]::after {
-    transform: rotate(180deg);
-    border-top-color: var(--accent);
-}
-
-.view-scene .gname {
-    font-weight: 500;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.view-scene .gbeh {
-    padding: 2px 9px;
-    border: 1px solid var(--line);
-    border-radius: 999px;
-    color: var(--muted);
-    font-size: 0.78em;
-}
-
-.view-scene .gcount { color: var(--muted); font-size: 0.85em; }
-/* A group whose lamp list this page cannot read, so the collapsed row says
-   so too and not only the open editor. */
-.view-scene .gcount.bad { color: var(--fault); }
-
-.view-scene .discs {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 4px;
-    padding-bottom: 12px;
-}
-
-.view-scene .more { color: var(--muted); font-size: 0.75em; margin-left: 4px; }
-
-/* A lamp a household has taken: a window, not a street lamp. The shape
-   says it, so the difference survives a colour-blind reading. */
-.view-scene .lamp.taken {
-    border-radius: 2px;
-    box-shadow: 0 0 0 1px var(--muted);
-}
-
-.view-scene .lamp.taken.on {
-    box-shadow: 0 0 6px 2px var(--glow), 0 0 0 1px var(--muted);
-}
-
-.view-scene .gform { padding-bottom: 12px; }
-
-/* The life layer, set off from the override grid above it by a rule so the
-   two selects read as one thought and not as two more overrides. */
-.view-scene .act {
-    margin-top: 4px;
-    padding-top: 10px;
-    border-top: 1px solid var(--line);
-}
-
-.view-scene .act h3 {
-    margin: 0 0 8px 0;
-    font-size: 0.9em;
-    font-weight: 600;
-}
-
-.view-scene .aline {
-    margin: 0;
-    color: var(--muted);
-    font-size: 0.85em;
-    max-width: 58ch;
-}
-
-.view-scene .err {
-    color: var(--fault);
-    font-size: 0.85em;
-    margin: -4px 0 10px 0;
-}
-
-.view-scene input[aria-invalid="true"] { border-color: var(--fault); }
-
-.view-scene .btn.danger {
-    background: transparent;
-    border-color: var(--fault);
-    color: var(--fault);
-    margin-top: 4px;
-}
+/* ------------------------------------------------------------ saving --- */
 
 .view-scene .actions {
     display: flex;
@@ -334,5 +212,4 @@
 
 @media (min-width: 720px) {
     .view-scene .town-time { font-size: 56px; }
-    .view-scene .cols { grid-template-columns: 1.7fr 1fr; }
 }
