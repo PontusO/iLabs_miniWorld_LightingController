@@ -140,11 +140,6 @@
         return out.join(", ");
     }
 
-    // A lamp status disc: <span class="lamp on|off">.
-    function lampDisc(lit) {
-        return el("span", { class: "lamp " + (lit ? "on" : "off") });
-    }
-
     function setOffline(offline) {
         var badge = document.getElementById("offline");
         if (badge) badge.hidden = !offline;
@@ -284,7 +279,6 @@
         el: el,
         fmtTime: fmtTime,
         parseRanges: parseRanges,
-        rangesText: rangesText,
-        lampDisc: lampDisc
+        rangesText: rangesText
     };
 })();

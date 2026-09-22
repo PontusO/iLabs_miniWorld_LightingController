@@ -476,12 +476,15 @@
                 touch();
             });
         model.setAttribute("aria-label", "Model");
-        var mfield = el("div", { class: "field mfield" },
+        var mfield = el("div", { class: "field" },
             el("span", null,
                 el("a", {
                     href: "#models", class: "mlink",
                     onclick: function (ev) {
                         ev.preventDefault();
+                        // The Models view opens this model rather than its
+                        // first one, and clears the name as it does.
+                        App.pendingModel = un.model || "";
                         App.go("models");
                     }
                 }, "Model"),
@@ -559,7 +562,7 @@
         row.name = el("span", { class: "uname" }, un.name || "Unnamed unit");
         row.model = el("span", { class: "umodel" }, un.model || "No model");
         row.glyph = el("span", { class: "st", "aria-hidden": "true" });
-        row.word = el("span", { class: "uword" }, "no reading");
+        row.word = el("span", null, "no reading");
         row.bad = el("span", { class: "ubad", hidden: !errs[i] },
             el("span", { class: "ring" }, "!"), "check rooms");
         row.sr = el("span", { class: "sr" }, "");
@@ -656,9 +659,21 @@
         }
     }
 
+    // The lamp list goes back as the device writes it: numbers and "a-b".
+    // A street written out as sixty integers would be sixty times the
+    // characters, and the whole document has to fit the 8 kB body the
+    // server reads.
+    function lampsJson(list) {
+        var text = App.rangesText(list);
+        if (!text) return [];
+        return text.split(", ").map(function (part) {
+            return /^\d+$/.test(part) ? parseInt(part, 10) : part;
+        });
+    }
+
     // The scene as the device wants it. The room rows carry the text the
     // field holds and what the parser made of it, which are this page's
-    // business, so the rooms are written out again as lamps and a role,
+    // business, so the rooms are written out again as ranges and a role,
     // and the model as the name it is referred to by.
     function payload() {
         var out = {}, key;
@@ -672,7 +687,7 @@
             }
             g.model = un.model || "";
             g.rooms = un.rooms.map(function (r) {
-                return { lamps: r.lamps.slice(), role: r.role };
+                return { lamps: lampsJson(r.lamps), role: r.role };
             });
             return g;
         });

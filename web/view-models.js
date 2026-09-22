@@ -357,8 +357,9 @@
         return el("div", null, rng, grid);
     }
 
-    function hoursFields(m, f, sync) {
+    function hoursFields(m, sync) {
         var grid = el("div", { class: "mg" });
+
         function anchor(key, label) {
             grid.appendChild(fld(label, sel(ANCHORS, m[key], cap, function (ev) {
                 m[key] = ev.target.value;
@@ -366,10 +367,6 @@
                 touch();
             })));
         }
-        anchor("onAnchor", "On anchor");
-        WINS.slice(0, 2).forEach(function (w) { winField(w); });
-        anchor("offAnchor", "Off anchor");
-        WINS.slice(2).forEach(function (w) { winField(w); });
 
         // A window end may be an offset from dusk or a clock minute past
         // midnight, so the field is as wide as both.
@@ -385,6 +382,11 @@
                 }
             })));
         }
+
+        anchor("onAnchor", "On anchor");
+        WINS.slice(0, 2).forEach(winField);
+        anchor("offAnchor", "Off anchor");
+        WINS.slice(2).forEach(winField);
 
         HNUMS.forEach(function (n) {
             grid.appendChild(fld(n[1], el("input", {
@@ -493,7 +495,7 @@
         return el("div", { class: "mform" },
             el("div", { class: "mg" }, fld("Name", name), fld("Kind", kindSel)),
             err,
-            kind(m) === "hours" ? hoursFields(m, f, sync) : rhythmFields(m, f, sync),
+            kind(m) === "hours" ? hoursFields(m, sync) : rhythmFields(m, f, sync),
             el("h3", null, "Every lamp"), common,
             el("h3", null, "Activity"),
             el("div", { class: "mg" },
@@ -654,6 +656,24 @@
 
     // --- view -------------------------------------------------------------
 
+    // The Houses view sets App.pendingModel when its Model link is tapped,
+    // so the tab opens on the model that unit runs. It is read once and
+    // cleared, and a name no model carries just leaves every row closed.
+    function openHandover() {
+        var want = App.pendingModel;
+        App.pendingModel = null;
+        if (!want) return;
+        cfg.models.forEach(function (m, i) {
+            if (m.name === want) open = i;
+        });
+    }
+
+    function scrollToOpen() {
+        if (open < 0) return;
+        var node = u.list.querySelectorAll(".mrow")[open];
+        if (node) node.scrollIntoView();
+    }
+
     function mount(root) {
         cfg = null;
         presets = null;
@@ -695,7 +715,9 @@
             if (!Array.isArray(cfg.units)) cfg.units = [];
             cfg.models.forEach(complete);
             refs = cfg.models.map(function (m) { return m.name; });
+            openHandover();
             render();
+            scrollToOpen();
         }, function (e) {
             if (token !== mounted) return;
             App.toast(e.message, "error");
