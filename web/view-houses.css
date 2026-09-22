@@ -1,6 +1,6 @@
 /*
     view-houses.css - the Houses view. A building is a heading with its
-    flats beneath it; a flat row is a name, who is home and a strip of
+    units beneath it; a unit row is a name, what it is doing and a strip of
     lettered room discs that light with the rooms. Every selector sits
     under .view-houses.
 
@@ -34,7 +34,7 @@
 
 .view-houses .building { margin-top: 10px; }
 
-/* The address is the shelf the flats stand on, so it carries the rule. */
+/* The address is the shelf the units stand on, so it carries the rule. */
 .view-houses .bname {
     display: flex;
     align-items: center;
@@ -54,12 +54,12 @@
     background: var(--line);
 }
 
-/* -------------------------------------------------------------- flats --- */
+/* -------------------------------------------------------------- units --- */
 
-.view-houses .flat { border-bottom: 1px solid var(--line); }
-.view-houses .flat:last-child { border-bottom: 0; }
+.view-houses .unit { border-bottom: 1px solid var(--line); }
+.view-houses .unit:last-child { border-bottom: 0; }
 
-.view-houses .frow {
+.view-houses .urow {
     position: relative;
     display: flex;
     flex-direction: column;
@@ -76,7 +76,7 @@
 }
 
 /* A caret, so open and closed differ in shape and not only in colour. */
-.view-houses .frow::after {
+.view-houses .urow::after {
     content: "";
     position: absolute;
     right: 2px;
@@ -89,26 +89,26 @@
     transition: transform var(--transition-fast);
 }
 
-.view-houses .frow[aria-expanded="true"]::after {
+.view-houses .urow[aria-expanded="true"]::after {
     transform: rotate(180deg);
     border-top-color: var(--accent);
 }
 
-.view-houses .ftop {
+.view-houses .utop {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 10px;
 }
 
-.view-houses .fname {
+.view-houses .uname {
     font-weight: 500;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-.view-houses .fstate {
+.view-houses .ustate {
     display: flex;
     align-items: center;
     flex: none;
@@ -117,14 +117,14 @@
     font-size: 0.85em;
 }
 
-.view-houses .fmeta {
+.view-houses .umeta {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
     gap: 6px;
 }
 
-.view-houses .ftype {
+.view-houses .umodel {
     padding: 2px 9px;
     border: 1px solid var(--line);
     border-radius: 999px;
@@ -132,8 +132,8 @@
     font-size: 0.78em;
 }
 
-/* A flat whose rooms hold Save says so on the closed row too. */
-.view-houses .fbad {
+/* A unit whose rooms hold Save says so on the closed row too. */
+.view-houses .ubad {
     display: inline-flex;
     align-items: center;
     gap: 4px;
@@ -232,9 +232,29 @@
     background: var(--muted);
 }
 
+/* A unit on opening hours: a disc for lit and dark, a square for a shop
+   that is open or closed. Filled is on and hollow is off, in the two
+   colours the household glyphs already use. */
+.view-houses .st.lit,
+.view-houses .st.open {
+    background: var(--accent);
+    box-shadow: 0 0 6px 2px var(--glow);
+}
+
+.view-houses .st.dark,
+.view-houses .st.closed {
+    border: 1px solid var(--muted);
+}
+
+.view-houses .st.lit,
+.view-houses .st.dark { border-radius: 50%; }
+
+.view-houses .st.open,
+.view-houses .st.closed { border-radius: 3px; }
+
 /* --------------------------------------------------------- room discs --- */
 
-.view-houses .frooms {
+.view-houses .urooms {
     display: inline-flex;
     flex-wrap: wrap;
     align-items: center;
@@ -280,26 +300,20 @@
 
 /* -------------------------------------------------------- the editor --- */
 
-.view-houses .fform { padding: 2px 0 14px 0; }
+.view-houses .uform { padding: 2px 0 14px 0; }
 
-.view-houses .fform .field > span { color: var(--muted); font-size: 0.85em; }
-.view-houses input[type="number"],
-.view-houses .rlamps,
-.view-houses .tin { font-variant-numeric: tabular-nums; }
+.view-houses .uform .field > span { color: var(--muted); font-size: 0.85em; }
 
-.view-houses .fg {
+/* What a unit does belongs to its model, so the label of the selector is
+   the way to the tab that owns it, with the kind in a lighter face. */
+.view-houses .mlink { color: var(--accent); }
+.view-houses .ukind { margin-left: 6px; color: var(--muted); font-weight: 400; }
+.view-houses .rlamps { font-variant-numeric: tabular-nums; }
+
+.view-houses .ug {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
     gap: 0 10px;
-}
-
-.view-houses .field.wk .switch { align-self: flex-start; margin-top: 8px; }
-
-.view-houses .rline {
-    margin: 2px 0 4px 0;
-    max-width: 58ch;
-    color: var(--muted);
-    font-size: 0.85em;
 }
 
 /* Rooms: the lamps of the room, what the room is, a blink and a way to
@@ -392,8 +406,7 @@
 }
 
 .view-houses .rrow input,
-.view-houses .rrow select,
-.view-houses .tin {
+.view-houses .rrow select {
     width: 100%;
     min-height: 44px;
     padding: 8px 10px;
@@ -414,21 +427,6 @@
 .view-houses .rhint { margin: 0 0 10px 0; }
 
 .view-houses .rooms-add { margin-bottom: 4px; }
-
-/* A rhythm range reads as one line: what it is, from, to. */
-.view-houses .rng {
-    display: grid;
-    grid-template-columns: 60px 1fr 1fr;
-    gap: 0 10px;
-    align-items: center;
-}
-
-.view-houses .rlab {
-    color: var(--text);
-    font-size: 0.9em;
-}
-
-.view-houses .rhythm { margin-bottom: 4px; }
 
 .view-houses .err {
     margin: 0 0 8px 0;
@@ -458,11 +456,15 @@
     text-align: center;
 }
 
+/* Add room ends the rooms; dropping the unit is another thought, so it
+   starts a line of its own rather than sitting beside that button. */
 .view-houses .btn.danger {
+    display: flex;
+    width: fit-content;
     background: transparent;
     border-color: var(--fault);
     color: var(--fault);
-    margin-top: 10px;
+    margin-top: 14px;
 }
 
 .view-houses .actions {
@@ -482,8 +484,4 @@
     margin-right: 7px;
     border-radius: 50%;
     background: var(--accent);
-}
-
-@media (min-width: 720px) {
-    .view-houses .rng { grid-template-columns: 80px 1fr 1fr; max-width: 460px; }
 }

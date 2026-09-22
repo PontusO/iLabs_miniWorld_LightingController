@@ -237,17 +237,17 @@
     }
 }
 
-/* ---------------------------------------------------------- households --- */
+/* --------------------------------------------------------------- units --- */
 
-/* One chip per flat: who is home right now, and which rooms are lit. The
-   shape carries the state on screen, the word carries it to a reader. */
-.view-home .hh-list {
+/* One chip per unit: what it is doing right now, and which rooms are lit.
+   The shape carries the state on screen, the word carries it to a reader. */
+.view-home .unit-list {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
 }
 
-.view-home .hh-chip {
+.view-home .unit-chip {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -258,18 +258,18 @@
     font-size: 0.85rem;
 }
 
-.view-home .hh-name {
+.view-home .unit-name {
     font-weight: 500;
     white-space: nowrap;
 }
 
-.view-home .hh-lit {
+.view-home .unit-lit {
     display: inline-flex;
     align-items: center;
     gap: 3px;
 }
 
-.view-home .hh-dark {
+.view-home .unit-dark {
     color: var(--muted);
     font-size: 0.85em;
 }
@@ -361,6 +361,26 @@
     height: 2px;
     background: var(--muted);
 }
+
+/* A unit on opening hours: a disc for lit and dark, a square for a shop
+   that is open or closed. Filled is on and hollow is off, in the two
+   colours the household glyphs already use. */
+.view-home .st.lit,
+.view-home .st.open {
+    background: var(--accent);
+    box-shadow: 0 0 6px 2px var(--glow);
+}
+
+.view-home .st.dark,
+.view-home .st.closed {
+    border: 1px solid var(--muted);
+}
+
+.view-home .st.lit,
+.view-home .st.dark { border-radius: 50%; }
+
+.view-home .st.open,
+.view-home .st.closed { border-radius: 3px; }
 
 /* The state in words, for a screen reader only. */
 .view-home .sr {

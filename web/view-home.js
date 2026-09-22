@@ -1,7 +1,7 @@
 // view-home.js - Home view: the town clock, the twelve I2C buses as tiles,
-//                the households strip, the network line and the scene
-//                switch. mount() builds the DOM once, poll() only writes
-//                text and classes.
+//                the units strip, the network line and the scene switch.
+//                mount() builds the DOM once, poll() only writes text and
+//                classes.
 //
 // Invector Embedded Systems AB
 
@@ -14,10 +14,14 @@
     var writing = false; // a clock PUT is in flight, leave the switch alone
     var r = null;        // element references, built by mount()
 
-    var STATES = ["awake", "asleep", "out", "away"];
+    // A household is awake, asleep, out or away; a unit on opening hours
+    // is open or closed, or lit or dark.
+    var STATES = ["awake", "asleep", "out", "away",
+                  "open", "closed", "lit", "dark"];
     var ROOM_WORDS = {
-        l: "living room", k: "kitchen", b: "bedroom",
-        t: "bathroom", h: "hall", o: "other room"
+        l: "living room", k: "kitchen", b: "bedroom", t: "bathroom",
+        h: "hall", f: "shop front", r: "back room", s: "sign",
+        o: "other room"
     };
 
     var NET_MODES = {
@@ -72,16 +76,16 @@
             onchange: function () { sendEnabled(input.checked); }
         });
 
-        var hhList = el("div", { class: "hh-list" });
-        var hh = el("section", { class: "card", hidden: true },
-            el("h2", null, "Households"), hhList);
+        var unitList = el("div", { class: "unit-list" });
+        var unitBox = el("section", { class: "card", hidden: true },
+            el("h2", null, "Units"), unitList);
 
         root.appendChild(el("div", { class: "view-home" },
             el("section", { class: "card clock" },
                 el("div", { class: "clock-face" }, time, lamp), caption, count),
             el("section", { class: "card" },
                 el("h2", null, "Buses", devices), grid),
-            hh,
+            unitBox,
             el("div", { class: "cols" },
                 el("section", { class: "card net" },
                     el("h2", null, "Network"), mode.node, name.node, ip.node,
@@ -98,7 +102,8 @@
 
         r = {
             time: time, lamp: lamp, caption: caption, count: count, tiles: tiles,
-            devices: devices, hh: hh, hhList: hhList, hhKey: null, chips: [],
+            devices: devices, unitBox: unitBox, unitList: unitList,
+            unitKey: null, chips: [],
             mode: mode.value, name: name.value,
             nameLabel: name.name, ip: ip.value, sys: sys.value,
             sysRow: sys.node, warn: warn, input: input
@@ -177,36 +182,36 @@
         if (!writing && r.input.checked !== !!s.enabled) r.input.checked = !!s.enabled;
     }
 
-    // One chip per flat: the name, a shape for the state and the rooms
+    // One chip per unit: the name, a shape for the state and the rooms
     // that are lit. The state word is there for a screen reader, since the
     // shape alone would say it to nobody else.
-    function buildChips(flats) {
-        r.hhList.innerHTML = "";
-        r.chips = flats.map(function (f) {
+    function buildChips(units) {
+        r.unitList.innerHTML = "";
+        r.chips = units.map(function (un) {
             var glyph = el("span", { class: "st", "aria-hidden": "true" });
             var word = el("span", { class: "sr" }, "");
-            var lit = el("span", { class: "hh-lit", "aria-hidden": "true" });
-            r.hhList.appendChild(el("div", { class: "hh-chip" },
-                el("span", { class: "hh-name" }, f.name || "Unnamed flat"),
+            var lit = el("span", { class: "unit-lit", "aria-hidden": "true" });
+            r.unitList.appendChild(el("div", { class: "unit-chip" },
+                el("span", { class: "unit-name" }, un.name || "Unnamed unit"),
                 glyph, word, lit));
             return { glyph: glyph, word: word, lit: lit, letters: null };
         });
     }
 
-    function showFlats(flats) {
-        var list = flats || [];
-        r.hh.hidden = list.length === 0;
+    function showUnits(units) {
+        var list = units || [];
+        r.unitBox.hidden = list.length === 0;
         if (!list.length) return;
-        var key = list.map(function (f) { return f.name; }).join("\u0000");
-        if (r.hhKey !== key) {
-            r.hhKey = key;
+        var key = list.map(function (un) { return un.name; }).join("\u0000");
+        if (r.unitKey !== key) {
+            r.unitKey = key;
             buildChips(list);
         }
-        list.forEach(function (f, i) {
+        list.forEach(function (un, i) {
             var c = r.chips[i];
-            var state = STATES.indexOf(f.state) >= 0 ? f.state : "";
+            var state = STATES.indexOf(un.state) >= 0 ? un.state : "";
             setClass(c.glyph, "st " + state);
-            var letters = String(f.lit || "");
+            var letters = String(un.lit || "");
             var words = [];
             for (var w = 0; w < letters.length; w++) {
                 words.push(ROOM_WORDS[letters.charAt(w)] || "room");
@@ -219,7 +224,7 @@
             c.letters = letters;
             c.lit.innerHTML = "";
             if (!letters) {
-                c.lit.appendChild(el("span", { class: "hh-dark" }, "dark"));
+                c.lit.appendChild(el("span", { class: "unit-dark" }, "dark"));
                 return;
             }
             for (var k = 0; k < letters.length; k++) {
@@ -276,7 +281,7 @@
             if (mine !== instance || !r) return;
             if (res[0]) {
                 showScene(res[0]);
-                showFlats(res[0].flats);
+                showUnits(res[0].units);
             }
             if (res[1]) showLamps(res[1]);
             if (res[2]) showNet(res[2]);
