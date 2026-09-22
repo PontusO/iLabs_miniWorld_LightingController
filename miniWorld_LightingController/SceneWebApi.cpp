@@ -39,17 +39,16 @@ void SceneWebApi::statusJson(String &body) {
     doc["lit"] = Scene.litCount();
     doc["active"] = Scene.activeCount();
     doc["lamps"] = Lamps.count();
-    doc["groups"] = Scene.config().groupCount;
 
-    // One entry per flat, in config order: what the household is doing and
-    // which of its rooms are lit right now.
-    JsonArray fs = doc["flats"].to<JsonArray>();
-    for (uint8_t f = 0; f < Scene.config().flatCount; f++) {
-        char lit[FLAT_MAX_ROOMS + 1];
-        Scene.flatLitRooms(f, lit, sizeof(lit));
-        JsonObject o = fs.add<JsonObject>();
-        o["name"] = Scene.config().flats[f].name;
-        o["state"] = Scene.flatState(f);
+    // One entry per unit, in config order: what it is doing and which of
+    // its rooms are lit right now.
+    JsonArray us = doc["units"].to<JsonArray>();
+    for (uint8_t u = 0; u < Scene.config().unitCount; u++) {
+        char lit[(uint8_t)Room::COUNT + 1];
+        Scene.unitLitRooms(u, lit, sizeof(lit));
+        JsonObject o = us.add<JsonObject>();
+        o["name"] = Scene.config().units[u].name;
+        o["state"] = Scene.unitState(u);
         o["lit"] = lit;
     }
 
@@ -74,7 +73,7 @@ int SceneWebApi::putConfig(const String &in, String &body) {
     if (!Scene.apply(cfg, true)) {
         return error(500, "applied but could not be stored", body);
     }
-    // Let the engine settle one tick, as putClock does, so the flat states
+    // Let the engine settle one tick, as putClock does, so the unit states
     // in the reply are the new scene's and not the old one's.
     Scene.tick();
     statusJson(body);
@@ -201,60 +200,54 @@ int SceneWebApi::postIdentify(const String &in, String &body) {
 
 int SceneWebApi::getPresets(String &body) {
     JsonDocument doc;
-    for (uint8_t i = 1; i < (uint8_t)Behaviour::COUNT; i++) {
-        // Static: a GroupConfig carries the 256 byte lamp bitmap, and
-        // setPreset() fills in every field this loop reads.
-        static GroupConfig G;
-        G.setPreset((Behaviour)i);
-        JsonObject o = doc[SceneConfig::behaviourName((Behaviour)i)].to<JsonObject>();
-        o["onAnchor"] = SceneConfig::anchorName(G.onAnchor);
-        JsonArray onW = o["on"].to<JsonArray>();
-        onW.add(G.onFrom);
-        onW.add(G.onTo);
-        o["offAnchor"] = SceneConfig::anchorName(G.offAnchor);
-        JsonArray offW = o["off"].to<JsonArray>();
-        offW.add(G.offFrom);
-        offW.add(G.offTo);
-        o["litPercent"] = G.litPercent;
-        o["flickerPercent"] = G.flickerPercent;
-        o["morning"] = G.morning;
-        o["level"] = G.level;
-        o["fadeMs"] = G.fadeMs;
-        o["dayActivity"] = G.dayActivity;
-        o["nightActivity"] = G.nightActivity;
-    }
 
-    // The household rhythms, for the flat editor. No entry for custom: it is
-    // "keep what I typed" and re-seeds from nothing.
-    JsonObject hh = doc["households"].to<JsonObject>();
-    for (uint8_t i = 0; i < (uint8_t)Household::COUNT; i++) {
-        if ((Household)i == Household::Custom) {
-            continue;
+    // The nine templates, each a whole model object as the scene document
+    // writes it, keyed by the template's key and named by its title. This
+    // is what "New model, start from" offers.
+    JsonObject ms = doc["models"].to<JsonObject>();
+    for (uint8_t i = 0; i < (uint8_t)Template::COUNT; i++) {
+        Template t = (Template)i;
+        // Static: a config object does not go on the core-0 stack, and
+        // setTemplate() fills in every field this loop reads.
+        static ModelConfig M;
+        M.setTemplate(t);
+        JsonObject o = ms[SceneConfig::templateKey(t)].to<JsonObject>();
+        o["name"] = SceneConfig::templateTitle(t);
+        o["kind"] = SceneConfig::kindName(M.kind);
+        o["level"] = M.level;
+        o["fadeMs"] = M.fadeMs;
+        o["dayActivity"] = M.dayActivity;
+        o["nightActivity"] = M.nightActivity;
+        if (M.kind == ModelKind::Rhythm) {
+            o["weekend"] = M.weekend;
+            JsonArray wk = o["wake"].to<JsonArray>();
+            wk.add(M.wakeFrom);
+            wk.add(M.wakeTo);
+            JsonArray lv = o["leave"].to<JsonArray>();
+            lv.add(M.leaveFrom);
+            lv.add(M.leaveTo);
+            JsonArray hm = o["home"].to<JsonArray>();
+            hm.add(M.homeFrom);
+            hm.add(M.homeTo);
+            JsonArray bd = o["bed"].to<JsonArray>();
+            bd.add(M.bedFrom);
+            bd.add(M.bedTo);
+            o["outPercent"] = M.outPercent;
+            o["tvPercent"] = M.tvPercent;
+        } else {
+            o["onAnchor"] = SceneConfig::anchorName(M.onAnchor);
+            JsonArray onW = o["on"].to<JsonArray>();
+            onW.add(M.onFrom);
+            onW.add(M.onTo);
+            o["offAnchor"] = SceneConfig::anchorName(M.offAnchor);
+            JsonArray offW = o["off"].to<JsonArray>();
+            offW.add(M.offFrom);
+            offW.add(M.offTo);
+            o["litPercent"] = M.litPercent;
+            o["flickerPercent"] = M.flickerPercent;
+            o["morning"] = M.morning;
+            o["individual"] = M.individual;
         }
-        // Static: a FlatConfig carries the room table, and setPreset() fills
-        // in every field this loop reads.
-        static FlatConfig F;
-        F.setPreset((Household)i);
-        JsonObject o = hh[SceneConfig::householdName((Household)i)].to<JsonObject>();
-        o["weekend"] = F.weekend;
-        JsonArray wk = o["wake"].to<JsonArray>();
-        wk.add(F.wakeFrom);
-        wk.add(F.wakeTo);
-        JsonArray lv = o["leave"].to<JsonArray>();
-        lv.add(F.leaveFrom);
-        lv.add(F.leaveTo);
-        JsonArray hm = o["home"].to<JsonArray>();
-        hm.add(F.homeFrom);
-        hm.add(F.homeTo);
-        JsonArray bd = o["bed"].to<JsonArray>();
-        bd.add(F.bedFrom);
-        bd.add(F.bedTo);
-        o["outPercent"] = F.outPercent;
-        o["tvPercent"] = F.tvPercent;
-        o["level"] = F.level;
-        o["fadeMs"] = F.fadeMs;
-        o["dayActivity"] = F.dayActivity;
-        o["nightActivity"] = F.nightActivity;
     }
 
     JsonArray rooms = doc["rooms"].to<JsonArray>();

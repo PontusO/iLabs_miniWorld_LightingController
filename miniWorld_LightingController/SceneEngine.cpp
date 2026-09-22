@@ -54,38 +54,33 @@ void SceneEngine::rebuild() {
     // written again and would stay on.
     releaseIdentify();
 
-    memset(_lampGroup, 0xFF, sizeof(_lampGroup));
-    for (uint8_t g = 0; g < _cfg.groupCount; g++) {
-        for (uint16_t l = 0; l < LAMPS_MAX_LAMPS; l++) {
-            if (_cfg.groups[g].has(l)) {
-                _lampGroup[l] = g;      // later groups win on overlap
-            }
+    // A lamp belongs to the first unit that lists it, so nothing below has
+    // to test for ownership twice. A unit whose model has gone is skipped
+    // here as well as dropped by clamp(), so the model index read through a
+    // unit is always one the engine can follow.
+    memset(_lampUnit, 0xFF, sizeof(_lampUnit));
+    for (uint8_t u = 0; u < _cfg.unitCount; u++) {
+        const UnitConfig &U = _cfg.units[u];
+        if (U.model >= _cfg.modelCount) {
+            continue;
         }
-    }
-
-    // A lamp a flat lists belongs to the flat, and the first flat listing it
-    // wins. Clearing its group entry keeps the group path from ever seeing
-    // it, so nothing below has to test for ownership twice.
-    memset(_lampFlat, 0xFF, sizeof(_lampFlat));
-    for (uint8_t f = 0; f < _cfg.flatCount; f++) {
-        const FlatConfig &F = _cfg.flats[f];
-        for (uint8_t r = 0; r < F.roomCount; r++) {
-            const RoomConfig &R = F.rooms[r];
-            for (uint8_t i = 0; i < R.lampCount; i++) {
-                uint16_t l = R.lamps[i];
-                if (l < LAMPS_MAX_LAMPS && _lampFlat[l] == 0xFF) {
-                    _lampFlat[l] = f;
-                    _lampGroup[l] = 0xFF;
+        for (uint8_t r = 0; r < U.roomCount; r++) {
+            const RoomConfig &R = U.rooms[r];
+            uint16_t n = R.count();
+            for (uint16_t i = 0; i < n; i++) {
+                uint16_t l = R.lamp(i);
+                if (l < LAMPS_MAX_LAMPS && _lampUnit[l] == 0xFF) {
+                    _lampUnit[l] = u;
                 }
             }
         }
     }
-    memset(_flatLit, 0, sizeof(_flatLit));
-    memset(_flatTv, 0, sizeof(_flatTv));
-    for (uint8_t f = 0; f < SCENE_MAX_FLATS; f++) {
-        _flatDay[f] = FlatDay();    // the old scene's households are gone
+    memset(_unitLit, 0, sizeof(_unitLit));
+    memset(_unitTv, 0, sizeof(_unitTv));
+    for (uint8_t u = 0; u < SCENE_MAX_UNITS; u++) {
+        _unitDay[u] = UnitDay();    // the old scene's households are gone
     }
-    _flatDoy = -1;                  // no day drawn: draw on the next evaluate
+    _unitDoy = -1;                  // no day drawn: draw on the next evaluate
 
     memset(_eventOn, 0, sizeof(_eventOn));
     memset(_eventOff, 0, sizeof(_eventOff));
@@ -134,7 +129,7 @@ void SceneEngine::setDayOfYear(uint16_t doy) {
     _sunForDoy = -1;
     // Turning dateFromSystem off changes where the weekday comes from, so
     // the households have to draw their day again even for the same date.
-    _flatDoy = -1;
+    _unitDoy = -1;
 }
 
 // Difference between local time and UTC as the system sees it. Relies on
@@ -233,21 +228,21 @@ uint32_t SceneEngine::hash(uint32_t a, uint32_t b) const {
     return h;
 }
 
-// Stable value in [0, 1) for a given purpose. The key is a lamp index on
-// the group path and a room key on the flat path.
+// Stable value in [0, 1) for a given purpose. The key is a lamp index for
+// an individual hours lamp and a room key everywhere else.
 float SceneEngine::unit(uint32_t key, uint32_t salt) const {
     return (float)(hash(key, salt) >> 8) / 16777216.0f;
 }
 
-// Per-lamp, per-day value in [0, 1). Same lamp, different evenings.
-float SceneEngine::dayUnit(uint16_t lamp, uint32_t salt) const {
-    return (float)(hash(lamp + 0x10000u * _doy, salt) >> 8) / 16777216.0f;
+// Per-key, per-day value in [0, 1). Same lamp or room, different evenings.
+float SceneEngine::dayUnit(uint32_t key, uint32_t salt) const {
+    return (float)(hash(key + 0x10000u * _doy, salt) >> 8) / 16777216.0f;
 }
 
-// Per-flat, per-day value in [0, 1). The 0x20000 keeps the flat draws off
+// Per-unit, per-day value in [0, 1). The 0x20000 keeps the unit draws off
 // the lamp draws, which live in the low half of the same space.
-float SceneEngine::flatUnit(uint8_t flat, uint16_t doy, uint32_t salt) const {
-    return (float)(hash(0x20000u + (uint32_t)flat + 0x10000u * (uint32_t)doy,
+float SceneEngine::unitUnit(uint8_t unit, uint16_t doy, uint32_t salt) const {
+    return (float)(hash(0x20000u + (uint32_t)unit + 0x10000u * (uint32_t)doy,
                         salt) >> 8) / 16777216.0f;
 }
 
@@ -255,13 +250,14 @@ float SceneEngine::flatUnit(uint8_t flat, uint16_t doy, uint32_t salt) const {
 // minutes around the household's moments and the life events alike, hangs
 // on this instead of on a lamp index, so the lamps of a room switch
 // together and adding one to a room leaves every other room alone. Sixteen
-// per flat covers FLAT_MAX_ROOMS with room to spare. The salts keep these
-// draws apart from the lamp and flat draws; the keys themselves can meet
+// per unit covers UNIT_MAX_ROOMS with room to spare. The salts keep these
+// draws apart from the lamp and unit draws; the keys themselves can meet
 // (a room key equals a low lamp key shifted three days in the event slot
 // hash), which is harmless and only means the streams are not disjoint.
-// Removing a room shifts the keys of the rooms after it.
-static inline uint32_t roomKey(uint8_t flat, uint8_t room) {
-    return 0x30000u + (uint32_t)flat * 16u + (uint32_t)room;
+// Removing a room shifts the keys of the rooms after it, and removing a
+// unit shifts the keys of the units after it.
+static inline uint32_t roomKey(uint8_t unit, uint8_t room) {
+    return 0x30000u + (uint32_t)unit * 16u + (uint32_t)room;
 }
 
 int SceneEngine::anchorBase(Anchor a, bool forOff) const {
@@ -291,23 +287,23 @@ static inline float clamp01(float v) {
 // layer needs the off moment even for a lamp that is dark or that never takes
 // part, so this runs before targetLevel()'s early exits. The arithmetic is
 // the arithmetic targetLevel() has always done, moved and not changed.
-void SceneEngine::lampMoments(uint16_t lamp, const GroupConfig &G, LampMoments &m) const {
+void SceneEngine::lampMoments(uint32_t key, const ModelConfig &M, LampMoments &m) const {
     // Personal moment inside each window, plus a daily wobble.
-    float jitterOn = (dayUnit(lamp, 11) - 0.5f) * JITTER_FRACTION;
-    float jitterOff = (dayUnit(lamp, 12) - 0.5f) * JITTER_FRACTION;
+    float jitterOn = (dayUnit(key, 11) - 0.5f) * JITTER_FRACTION;
+    float jitterOff = (dayUnit(key, 12) - 0.5f) * JITTER_FRACTION;
 
-    m.on = anchorBase(G.onAnchor, false) +
-           lerp(G.onFrom, G.onTo, clamp01(unit(lamp, 2) + jitterOn));
-    m.off = anchorBase(G.offAnchor, true) +
-            lerp(G.offFrom, G.offTo, clamp01(unit(lamp, 3) + jitterOff));
+    m.on = anchorBase(M.onAnchor, false) +
+           lerp(M.onFrom, M.onTo, clamp01(unit(key, 2) + jitterOn));
+    m.off = anchorBase(M.offAnchor, true) +
+            lerp(M.offFrom, M.offTo, clamp01(unit(key, 3) + jitterOff));
 
     if (m.off <= m.on) {
         m.off += 1440;
     }
 
     // Winter mornings: some households are up before it is light.
-    m.morningApplies = G.morning && unit(lamp, 4) < 0.7f;
-    m.morningOn = lerp(6 * 60 + 15, 7 * 60 + 45, unit(lamp, 5));
+    m.morningApplies = M.morning && unit(key, 4) < 0.7f;
+    m.morningOn = lerp(6 * 60 + 15, 7 * 60 + 45, unit(key, 5));
     m.morningOff = _dawn + 15;
     if (m.morningOff < m.morningOn + 45) {
         m.morningOff = m.morningOn + 45;
@@ -315,17 +311,18 @@ void SceneEngine::lampMoments(uint16_t lamp, const GroupConfig &G, LampMoments &
     m.morningLit = false;
 }
 
-uint16_t SceneEngine::targetLevel(uint16_t lamp, const GroupConfig &G, bool &flicker,
+uint16_t SceneEngine::targetLevel(uint32_t key, const ModelConfig &M, bool &flicker,
                                   LampMoments &m) {
     flicker = false;
-    lampMoments(lamp, G, m);
+    lampMoments(key, M, m);
 
-    if (G.behaviour == Behaviour::Off || G.litPercent == 0) {
-        return 0;
+    if (M.litPercent == 0) {
+        return 0;               // a model that is never lit
     }
 
-    // Does this lamp take part at all? (Empty flat, shop closed for good.)
-    if (unit(lamp, 1) * 100.0f >= G.litPercent) {
+    // Does this lamp, or this room, take part at all? (Empty flat, shop
+    // closed for good.)
+    if (unit(key, 1) * 100.0f >= M.litPercent) {
         return 0;
     }
 
@@ -341,8 +338,8 @@ uint16_t SceneEngine::targetLevel(uint16_t lamp, const GroupConfig &G, bool &fli
         return 0;
     }
 
-    flicker = (G.flickerPercent > 0) && (unit(lamp, 6) * 100.0f < G.flickerPercent);
-    return (uint16_t)(G.level * 257);
+    flicker = (M.flickerPercent > 0) && (unit(key, 6) * 100.0f < M.flickerPercent);
+    return (uint16_t)(M.level * 257);
 }
 
 // ---------------------------------------------------------------------------
@@ -459,20 +456,23 @@ void SceneEngine::evaluateEvents() {
     int m = (int)_sim;
 
     for (uint16_t lamp = 0; lamp < count; lamp++) {
-        uint8_t g = _lampGroup[lamp];
-        if (g == 0xFF) {
+        uint8_t u = _lampUnit[lamp];
+        if (u == 0xFF) {
             continue;
         }
-        const GroupConfig &G = _cfg.groups[g];
-        uint8_t dayLevel = G.dayActivity > 3 ? 3 : G.dayActivity;
-        uint8_t nightLevel = G.nightActivity > 3 ? 3 : G.nightActivity;
+        const ModelConfig &M = _cfg.models[_cfg.units[u].model];
+        if (M.kind != ModelKind::Hours || !M.individual) {
+            continue;                   // the room decides, not the lamp
+        }
+        uint8_t dayLevel = M.dayActivity > 3 ? 3 : M.dayActivity;
+        uint8_t nightLevel = M.nightActivity > 3 ? 3 : M.nightActivity;
         if (dayLevel == 0 && nightLevel == 0) {
             continue;                   // a street lamp has no life
         }
 
         bool flicker;
         LampMoments mo;
-        uint16_t base = targetLevel(lamp, G, flicker, mo);
+        uint16_t base = targetLevel(lamp, M, flicker, mo);
 
         bool hit = false;
         if (base) {
@@ -510,13 +510,14 @@ void SceneEngine::evaluateEvents() {
         }
     }
 
-    // Flat lamps are not in any group, so the loop above never saw them.
-    // Their life is the same machinery with rates scaled by the room.
-    evaluateFlatEvents(m);
+    // Every other lamp belongs to a room rather than to itself, so the loop
+    // above skipped it. Its life is the same machinery, drawn once for the
+    // room with rates scaled by what the room is for.
+    evaluateUnitEvents(m);
 }
 
 // ---------------------------------------------------------------------------
-// Flats: the household is the unit of behaviour, the lamp is not
+// Units: the household, or the room, is what behaves, and the lamp is not
 // ---------------------------------------------------------------------------
 
 // Salts for the per-room variation, drawn against the room's key. They only
@@ -530,25 +531,28 @@ void SceneEngine::evaluateEvents() {
 #define SALT_BED_OFF        0x705
 #define SALT_KITCHEN_EVE    0x706   // the weekend evening, before dinner
 
-// How much later the household gets up on a Saturday, and how often it goes
-// out in the middle of a weekend day, by household type. Custom starts from
-// the family rhythm, so it keeps the family weekend too.
-static int weekendWakeShift(Household t) {
-    switch (t) {
-        case Household::Elderly:  return 30;
-        case Household::NightOwl: return 90;
-        case Household::Away:     return 0;
-        default:                  return 90;    // family, custom
-    }
+// A model has no household type, so the weekend is read off the rhythm
+// itself. In bed by 22:30 is the elderly shape: up early whatever the day,
+// so the Saturday lie-in is short, the errands are done in the late
+// morning, and the weekend is often spent out. This gives the four
+// templates the values they had when the type decided it.
+static bool earlyToBed(const ModelConfig &M) {
+    return !M.isAway() && M.bedTo <= 1350;      // 22:30
 }
 
-static int weekendOutPercent(Household t) {
-    switch (t) {
-        case Household::Elderly:  return 40;
-        case Household::NightOwl: return 30;
-        case Household::Away:     return 0;
-        default:                  return 50;    // family, custom
-    }
+// How much later the household gets up on a Saturday, and how often it goes
+// out in the middle of a weekend day.
+static int weekendWakeShift(const ModelConfig &M) {
+    if (M.isAway()) return 0;
+    if (earlyToBed(M)) return 30;
+    return 90;                                  // late risers and everyone else
+}
+
+static int weekendOutPercent(const ModelConfig &M) {
+    if (M.isAway()) return 0;
+    if (earlyToBed(M)) return 40;
+    if (M.wakeFrom >= 540) return 30;           // up at 09:00 or later
+    return 50;
 }
 
 // The day of the week for a day of the year. The real calendar when the
@@ -566,61 +570,68 @@ uint8_t SceneEngine::weekday(uint16_t doy) const {
     return (uint8_t)((doy + 3) % 7);
 }
 
-// The eight draws of one day of one flat. Everything the rooms need is
+// The eight draws of one day of one unit. Everything the rooms need is
 // decided here, once, so the room schedule is pure arithmetic afterwards.
-void SceneEngine::computeFlatDay(uint8_t flat, uint16_t doy, FlatDay &d) const {
-    d = FlatDay();
-    if (flat >= _cfg.flatCount) {
+void SceneEngine::computeUnitDay(uint8_t unit, uint16_t doy, UnitDay &d) const {
+    d = UnitDay();
+    if (unit >= _cfg.unitCount) {
         return;
     }
-    const FlatConfig &F = _cfg.flats[flat];
-    if (F.type == Household::Away) {
+    const UnitConfig &U = _cfg.units[unit];
+    if (U.model >= _cfg.modelCount) {
+        return;
+    }
+    const ModelConfig &M = _cfg.models[U.model];
+    if (M.kind != ModelKind::Rhythm) {
+        return;                     // an hours unit has no household day
+    }
+    if (M.isAway()) {
         return;                     // no rhythm at all, only the timer lamp
     }
 
     uint8_t wd = weekday(doy);
-    d.weekend = F.weekend && (wd == 0 || wd == 6);
+    d.weekend = M.weekend && (wd == 0 || wd == 6);
 
-    float u1 = flatUnit(flat, doy, 1);
-    float u2 = flatUnit(flat, doy, 2);
-    float u3 = flatUnit(flat, doy, 3);
-    float u4 = flatUnit(flat, doy, 4);
-    float u5 = flatUnit(flat, doy, 5);
-    float u6 = flatUnit(flat, doy, 6);
-    float u7 = flatUnit(flat, doy, 7);
-    float u8 = flatUnit(flat, doy, 8);
+    float u1 = unitUnit(unit, doy, 1);
+    float u2 = unitUnit(unit, doy, 2);
+    float u3 = unitUnit(unit, doy, 3);
+    float u4 = unitUnit(unit, doy, 4);
+    float u5 = unitUnit(unit, doy, 5);
+    float u6 = unitUnit(unit, doy, 6);
+    float u7 = unitUnit(unit, doy, 7);
+    float u8 = unitUnit(unit, doy, 8);
 
-    if (F.wakeFrom >= 0) {
-        d.wake = (int16_t)(lerp(F.wakeFrom, F.wakeTo, u1) +
-                           (d.weekend ? weekendWakeShift(F.type) : 0));
+    if (M.wakeFrom >= 0) {
+        d.wake = (int16_t)(lerp(M.wakeFrom, M.wakeTo, u1) +
+                           (d.weekend ? weekendWakeShift(M) : 0));
     }
     // Nobody leaves for work on a Saturday, and some households never do.
-    if (!d.weekend && F.leaveFrom >= 0) {
-        d.leave = (int16_t)lerp(F.leaveFrom, F.leaveTo, u2);
+    if (!d.weekend && M.leaveFrom >= 0) {
+        d.leave = (int16_t)lerp(M.leaveFrom, M.leaveTo, u2);
     }
-    if (F.homeFrom >= 0) {
-        d.home = (int16_t)lerp(F.homeFrom, F.homeTo, u3);
+    if (M.homeFrom >= 0) {
+        d.home = (int16_t)lerp(M.homeFrom, M.homeTo, u3);
     }
     // Dinner follows coming home; on a weekend, and for a household with no
     // homecoming at all, it sits in the early evening on its own.
     d.dinner = (d.weekend || d.home < 0)
                    ? (int16_t)lerp(17 * 60 + 30, 18 * 60 + 30, u4)
                    : (int16_t)(d.home + lerp(45, 90, u4));
-    if (F.bedFrom >= 0) {
-        d.bed = (int16_t)(lerp(F.bedFrom, F.bedTo, u5) + (d.weekend ? 30 : 0));
+    if (M.bedFrom >= 0) {
+        d.bed = (int16_t)(lerp(M.bedFrom, M.bedTo, u5) + (d.weekend ? 30 : 0));
     }
 
-    int outPct = F.outPercent * (d.weekend ? 2 : 1);
+    int outPct = M.outPercent * (d.weekend ? 2 : 1);
     d.out = (d.bed >= 0) && (u6 * 100.0f < (float)outPct);
-    d.tv = (u7 * 100.0f < (float)F.tvPercent);
+    d.tv = (u7 * 100.0f < (float)M.tvPercent);
     if (d.out) {
         d.ret = (int16_t)(d.bed - lerp(15, 25, u8));
     }
 
-    // A weekend day out: the errands of an elderly couple in the late
-    // morning, everyone else in the middle of the day.
-    if (d.weekend && u2 * 100.0f < (float)weekendOutPercent(F.type)) {
-        if (F.type == Household::Elderly) {
+    // A weekend day out: the errands of an early-to-bed household in the
+    // late morning, everyone else in the middle of the day.
+    if (d.weekend && u2 * 100.0f < (float)weekendOutPercent(M)) {
+        if (earlyToBed(M)) {
             d.outLeave = (int16_t)lerp(10 * 60, 11 * 60 + 30, u3);
             d.outHome = (int16_t)lerp(12 * 60 + 30, 14 * 60, u8);
         } else {
@@ -630,9 +641,9 @@ void SceneEngine::computeFlatDay(uint8_t flat, uint16_t doy, FlatDay &d) const {
     }
 }
 
-// Is the household out of the flat at minute t? Away from work or school,
-// away on a weekend errand, or out for the evening and not yet back.
-bool SceneEngine::flatOut(const FlatDay &d, int t) const {
+// Is the household out at minute t? Away from work or school, away on a
+// weekend errand, or out for the evening and not yet back.
+bool SceneEngine::unitOut(const UnitDay &d, int t) const {
     if (d.leave >= 0 && d.home >= 0 && inWindow(t, d.leave, d.home)) {
         return true;
     }
@@ -660,7 +671,7 @@ bool SceneEngine::span(int t, int from, int to, int gateFrom, int gateTo) {
 // not. Evening intervals wait for sunset and
 // morning intervals stop at sunrise; the bathroom and the hall do not,
 // because a light there is a person, not the light of the room.
-bool SceneEngine::roomLit(const FlatDay &d, uint32_t key, Room role, int t,
+bool SceneEngine::roomLit(const UnitDay &d, uint32_t key, Room role, int t,
                           bool out, bool &tv) const {
     tv = false;
 
@@ -716,7 +727,13 @@ bool SceneEngine::roomLit(const FlatDay &d, uint32_t key, Room role, int t,
             transition = lit;
             break;
 
+        // A front, a back and a sign are somebody's outside lights under a
+        // household: they follow the evening in the same way as the room
+        // with no name of its own.
         case Room::Living:
+        case Room::Front:
+        case Room::Back:
+        case Room::Sign:
         case Room::Other:
             if (d.out && d.ret >= 0 && d.bed >= 0) {
                 // An evening out: the room only wakes up when they get back.
@@ -760,132 +777,181 @@ bool SceneEngine::roomLit(const FlatDay &d, uint32_t key, Room role, int t,
     return lit;
 }
 
-// Rebuild the two flat bitmaps, and the day behind them when the date has
-// moved. Called once per simulated minute, like the events.
-void SceneEngine::evaluateFlats() {
-    if ((int)_doy != _flatDoy) {
-        for (uint8_t f = 0; f < _cfg.flatCount; f++) {
-            computeFlatDay(f, _doy, _flatDay[f]);
-        }
-        _flatDoy = (int)_doy;
-    }
-
-    memset(_flatLit, 0, sizeof(_flatLit));
-    memset(_flatTv, 0, sizeof(_flatTv));
-
-    int t = (int)_sim;
-
-    for (uint8_t f = 0; f < _cfg.flatCount; f++) {
-        const FlatConfig &F = _cfg.flats[f];
-        const FlatDay &d = _flatDay[f];
-
-        if (F.type == Household::Away) {
-            // Nobody home this week: one timer room in the living room, or
-            // the other room when there is no living room, and nothing else.
-            int timer = -1;
-            for (uint8_t r = 0; r < F.roomCount; r++) {
-                if (F.rooms[r].role == Room::Living) {
-                    timer = r;
-                    break;
-                }
-                if (timer < 0 && F.rooms[r].role == Room::Other) {
-                    timer = r;
-                }
-            }
-            if (timer >= 0 && inWindow(t, 19 * 60, 22 * 60 + 30)) {
-                const RoomConfig &R = F.rooms[timer];
-                for (uint8_t i = 0; i < R.lampCount; i++) {
-                    uint16_t lamp = R.lamps[i];
-                    if (_lampFlat[lamp] == f) {
-                        _flatLit[lamp >> 5] |= 1u << (lamp & 31);
-                    }
-                }
-            }
+// Light every lamp of one room, and give it the television if the room has
+// one. A lamp an earlier unit listed is left alone.
+void SceneEngine::litRoom(uint8_t unitIndex, const RoomConfig &R, bool tv) {
+    uint16_t n = R.count();
+    for (uint16_t i = 0; i < n; i++) {
+        uint16_t lamp = R.lamp(i);
+        if (lamp >= LAMPS_MAX_LAMPS || _lampUnit[lamp] != unitIndex) {
             continue;
         }
-
-        bool out = flatOut(d, t);
-        for (uint8_t r = 0; r < F.roomCount; r++) {
-            const RoomConfig &R = F.rooms[r];
-            // One decision per room, taken from the room's key, then handed
-            // to every lamp the room owns: a room with three lamps is one
-            // room and not three.
-            bool tv = false;
-            if (!roomLit(d, roomKey(f, r), R.role, t, out, tv)) {
-                continue;
-            }
-            for (uint8_t i = 0; i < R.lampCount; i++) {
-                uint16_t lamp = R.lamps[i];
-                if (_lampFlat[lamp] != f) {
-                    continue;       // an earlier flat listed this lamp
-                }
-                _flatLit[lamp >> 5] |= 1u << (lamp & 31);
-                if (tv) {
-                    _flatTv[lamp >> 5] |= 1u << (lamp & 31);
-                }
-            }
+        _unitLit[lamp >> 5] |= 1u << (lamp & 31);
+        if (tv) {
+            _unitTv[lamp >> 5] |= 1u << (lamp & 31);
         }
     }
 }
 
-// The life layer for flat lamps. Same slots, kinds and lengths as the group
-// path; the rate is the flat's level scaled by what the room is for.
-static const float roomDayRate[(uint8_t)Room::COUNT] =
-    { 0.3f, 1.0f, 0.2f, 0.5f, 0.7f, 0.3f };
-static const float roomDipRate[(uint8_t)Room::COUNT] =
-    { 1.0f, 0.3f, 0.2f, 0.0f, 0.0f, 0.5f };
-static const float roomNightRate[(uint8_t)Room::COUNT] =
-    { 0.0f, 0.0f, 0.2f, 1.0f, 0.3f, 0.0f };
+// Rebuild the two unit bitmaps, and the days behind them when the date has
+// moved. Called once per simulated minute, like the events. Every unit
+// whose rooms decide together is in here: a household, and an hours unit
+// that switches as one. An individual hours lamp is not, since it decides
+// for itself in tick().
+void SceneEngine::evaluateUnits() {
+    if ((int)_doy != _unitDoy) {
+        for (uint8_t u = 0; u < _cfg.unitCount; u++) {
+            computeUnitDay(u, _doy, _unitDay[u]);
+        }
+        _unitDoy = (int)_doy;
+    }
 
-void SceneEngine::evaluateFlatEvents(int m) {
-    for (uint8_t f = 0; f < _cfg.flatCount; f++) {
-        const FlatConfig &F = _cfg.flats[f];
-        if (F.type == Household::Away) {
+    memset(_unitLit, 0, sizeof(_unitLit));
+    memset(_unitTv, 0, sizeof(_unitTv));
+
+    int t = (int)_sim;
+
+    for (uint8_t u = 0; u < _cfg.unitCount; u++) {
+        const UnitConfig &U = _cfg.units[u];
+        if (U.model >= _cfg.modelCount) {
+            continue;
+        }
+        const ModelConfig &M = _cfg.models[U.model];
+
+        if (M.kind == ModelKind::Hours) {
+            if (M.individual) {
+                continue;           // every lamp keeps its own moment
+            }
+            // One draw per room, so a street switches in one sweep and a
+            // shop's windows go out together.
+            for (uint8_t r = 0; r < U.roomCount; r++) {
+                bool flicker = false;
+                LampMoments mo;
+                if (targetLevel(roomKey(u, r), M, flicker, mo)) {
+                    litRoom(u, U.rooms[r], flicker);
+                }
+            }
+            continue;
+        }
+
+        const UnitDay &d = _unitDay[u];
+        if (M.isAway()) {
+            // Nobody home this week: one timer room in the living room, or
+            // the other room when there is no living room, and nothing else.
+            int timer = -1;
+            for (uint8_t r = 0; r < U.roomCount; r++) {
+                if (U.rooms[r].role == Room::Living) {
+                    timer = r;
+                    break;
+                }
+                if (timer < 0 && U.rooms[r].role == Room::Other) {
+                    timer = r;
+                }
+            }
+            if (timer >= 0 && inWindow(t, 19 * 60, 22 * 60 + 30)) {
+                litRoom(u, U.rooms[timer], false);
+            }
+            continue;
+        }
+
+        bool out = unitOut(d, t);
+        for (uint8_t r = 0; r < U.roomCount; r++) {
+            const RoomConfig &R = U.rooms[r];
+            // One decision per room, taken from the room's key, then handed
+            // to every lamp the room owns: a room with three lamps is one
+            // room and not three.
+            bool tv = false;
+            if (!roomLit(d, roomKey(u, r), R.role, t, out, tv)) {
+                continue;
+            }
+            litRoom(u, R, tv);
+        }
+    }
+}
+
+// The life layer for the lamps a room decides for. Same slots, kinds and
+// lengths as the per-lamp path; the rate is the model's level scaled by
+// what the room is for. A sign has no life of its own.
+static const float roomDayRate[(uint8_t)Room::COUNT] =
+    { 0.3f, 1.0f, 0.2f, 0.5f, 0.7f, 0.3f, 0.7f, 0.0f, 0.3f };
+static const float roomDipRate[(uint8_t)Room::COUNT] =
+    { 1.0f, 0.3f, 0.2f, 0.0f, 0.0f, 0.5f, 0.3f, 0.0f, 0.5f };
+static const float roomNightRate[(uint8_t)Room::COUNT] =
+    { 0.0f, 0.0f, 0.2f, 1.0f, 0.3f, 0.0f, 0.0f, 0.0f, 0.0f };
+
+void SceneEngine::evaluateUnitEvents(int m) {
+    for (uint8_t u = 0; u < _cfg.unitCount; u++) {
+        const UnitConfig &U = _cfg.units[u];
+        if (U.model >= _cfg.modelCount) {
+            continue;
+        }
+        const ModelConfig &M = _cfg.models[U.model];
+        bool rhythm = (M.kind == ModelKind::Rhythm);
+        if (!rhythm && M.individual) {
+            continue;               // done lamp by lamp in evaluateEvents()
+        }
+        if (rhythm && M.isAway()) {
             continue;               // a timer lamp has no life at all
         }
-        uint8_t dayLevel = F.dayActivity > 3 ? 3 : F.dayActivity;
-        uint8_t nightLevel = F.nightActivity > 3 ? 3 : F.nightActivity;
+        uint8_t dayLevel = M.dayActivity > 3 ? 3 : M.dayActivity;
+        uint8_t nightLevel = M.nightActivity > 3 ? 3 : M.nightActivity;
         if (dayLevel == 0 && nightLevel == 0) {
             continue;
         }
 
-        const FlatDay &d = _flatDay[f];
-        if (flatOut(d, m)) {
-            continue;               // nobody is home to switch anything on
-        }
-
-        // The night of a flat is the household's night, not the lamp's own
-        // off moment: from bed until the household is up again.
+        const UnitDay &d = _unitDay[u];
+        // The night of a household is the household's night, not a lamp's
+        // own off moment: from bed until they are up again.
         int nightFrom = d.bed;
         int nightTo = d.wake + 1440;
         while (nightTo <= nightFrom) {
             nightTo += 1440;
         }
-        bool haveNight = (d.bed >= 0 && d.wake >= 0);
-        bool night = haveNight && inWindow(m, nightFrom, nightTo);
+        bool night = rhythm && d.bed >= 0 && d.wake >= 0 &&
+                     inWindow(m, nightFrom, nightTo);
+        if (rhythm && unitOut(d, m)) {
+            continue;               // nobody is home to switch anything on
+        }
 
-        for (uint8_t r = 0; r < F.roomCount; r++) {
-            const RoomConfig &R = F.rooms[r];
+        for (uint8_t r = 0; r < U.roomCount; r++) {
+            const RoomConfig &R = U.rooms[r];
             uint8_t role = (uint8_t)R.role;
             if (role >= (uint8_t)Room::COUNT) {
                 continue;
             }
             // The room is lit or not as a whole, so the first lamp it still
             // owns speaks for all of them. A room whose every lamp went to
-            // an earlier flat has nothing left to switch.
+            // an earlier unit has nothing left to switch.
             int first = -1;
-            for (uint8_t i = 0; i < R.lampCount && first < 0; i++) {
-                if (_lampFlat[R.lamps[i]] == f) {
-                    first = R.lamps[i];
+            uint16_t n = R.count();
+            for (uint16_t i = 0; i < n && first < 0; i++) {
+                uint16_t lamp = R.lamp(i);
+                if (lamp < LAMPS_MAX_LAMPS && _lampUnit[lamp] == u) {
+                    first = lamp;
                 }
             }
             if (first < 0) {
                 continue;
             }
-            bool lit = (_flatLit[first >> 5] >> (first & 31)) & 1;
+            bool lit = (_unitLit[first >> 5] >> (first & 31)) & 1;
 
             // One draw for the room; the bitmaps below are per lamp.
-            uint32_t key = roomKey(f, r);
+            uint32_t key = roomKey(u, r);
+            if (!rhythm) {
+                // The night of a room under an hours model is the room's
+                // own, as a lamp's is on the per-lamp path: from its off
+                // moment to 05:30, or to its morning light if that is
+                // sooner.
+                LampMoments mo;
+                lampMoments(key, M, mo);
+                nightFrom = mo.off;
+                nightTo = 1440 + 330;
+                if (mo.morningApplies && mo.morningOn + 1440 < nightTo) {
+                    nightTo = mo.morningOn + 1440;
+                }
+                night = (nightTo > nightFrom) && inWindow(m, nightFrom, nightTo);
+            }
+
             bool hit;
             bool on;
             if (lit) {
@@ -906,9 +972,9 @@ void SceneEngine::evaluateFlatEvents(int m) {
                 continue;
             }
 
-            for (uint8_t i = 0; i < R.lampCount; i++) {
-                uint16_t lamp = R.lamps[i];
-                if (_lampFlat[lamp] != f) {
+            for (uint16_t i = 0; i < n; i++) {
+                uint16_t lamp = R.lamp(i);
+                if (lamp >= LAMPS_MAX_LAMPS || _lampUnit[lamp] != u) {
                     continue;
                 }
                 uint32_t word = lamp >> 5;
@@ -918,25 +984,45 @@ void SceneEngine::evaluateFlatEvents(int m) {
                 } else {
                     _eventOff[word] |= bit;
                 }
-                _active++;          // a count of lamps, as on the group path
+                _active++;          // a count of lamps, as on the lamp path
             }
         }
     }
 }
 
 // ---------------------------------------------------------------------------
-// What a flat looks like from outside, for the status API
+// What a unit looks like from outside, for the status API
 // ---------------------------------------------------------------------------
 
-const char *SceneEngine::flatState(uint8_t flat) const {
-    if (flat >= _cfg.flatCount) {
-        return "away";
+const char *SceneEngine::unitState(uint8_t unit) const {
+    if (unit >= _cfg.unitCount || _cfg.units[unit].model >= _cfg.modelCount) {
+        return "dark";
     }
-    if (_cfg.flats[flat].type == Household::Away) {
-        return "away";
-    }
-    const FlatDay &d = _flatDay[flat];
+    const ModelConfig &M = _cfg.models[_cfg.units[unit].model];
     int t = (int)_sim;
+
+    if (M.kind == ModelKind::Hours) {
+        // The middle of each window, which is the unit's day rather than
+        // any one lamp's. It does not look at litPercent, so a shop whose
+        // every lamp opted out is still open; the letters say what is
+        // actually lit.
+        int on = anchorBase(M.onAnchor, false) + (M.onFrom + M.onTo) / 2;
+        int off = anchorBase(M.offAnchor, true) + (M.offFrom + M.offTo) / 2;
+        if (off <= on) {
+            off += 1440;
+        }
+        bool lit = inWindow(t, on, off);
+        bool byTheClock = (M.onAnchor == Anchor::Clock && M.offAnchor == Anchor::Clock);
+        if (byTheClock) {
+            return lit ? "open" : "closed";
+        }
+        return lit ? "lit" : "dark";
+    }
+
+    if (M.isAway()) {
+        return "away";
+    }
+    const UnitDay &d = _unitDay[unit];
 
     if (d.bed >= 0 && d.wake >= 0) {
         int to = d.wake + 1440;
@@ -947,41 +1033,45 @@ const char *SceneEngine::flatState(uint8_t flat) const {
             return "asleep";
         }
     }
-    if (flatOut(d, t)) {
+    if (unitOut(d, t)) {
         return "out";
     }
     return "awake";
 }
 
-void SceneEngine::flatLitRooms(uint8_t flat, char *out, size_t len) const {
+void SceneEngine::unitLitRooms(uint8_t unit, char *out, size_t len) const {
     static const char letters[(uint8_t)Room::COUNT] =
-        { 'l', 'k', 'b', 't', 'h', 'o' };
+        { 'l', 'k', 'b', 't', 'h', 'f', 'r', 's', 'o' };
 
     if (!out || len == 0) {
         return;
     }
     out[0] = 0;
-    if (flat >= _cfg.flatCount) {
+    if (unit >= _cfg.unitCount || _cfg.units[unit].model >= _cfg.modelCount) {
         return;
     }
 
     // One bit per role first, so a role that has two lit rooms still gives
-    // one letter and the letters come out in role order however the flat
+    // one letter and the letters come out in role order however the unit
     // happens to list its rooms.
-    const FlatConfig &F = _cfg.flats[flat];
-    uint8_t seen = 0;
-    for (uint8_t r = 0; r < F.roomCount; r++) {
-        const RoomConfig &R = F.rooms[r];
+    const UnitConfig &U = _cfg.units[unit];
+    const ModelConfig &M = _cfg.models[U.model];
+    bool perLamp = (M.kind == ModelKind::Hours && M.individual);
+    uint16_t seen = 0;
+    for (uint8_t r = 0; r < U.roomCount; r++) {
+        const RoomConfig &R = U.rooms[r];
         uint8_t role = (uint8_t)R.role;
         if (role >= (uint8_t)Room::COUNT) {
             continue;
         }
         // The lamps of a room carry the same bits, so any lit lamp lights
         // the role. Reading them all keeps this true whatever an earlier
-        // flat has taken away.
-        for (uint8_t i = 0; i < R.lampCount; i++) {
-            uint16_t lamp = R.lamps[i];
-            if (_lampFlat[lamp] != flat) {
+        // unit has taken away. A lamp that decides for itself is lit when
+        // it is lit: there is no room bit to read.
+        uint16_t n = R.count();
+        for (uint16_t i = 0; i < n; i++) {
+            uint16_t lamp = R.lamp(i);
+            if (lamp >= LAMPS_MAX_LAMPS || _lampUnit[lamp] != unit) {
                 continue;
             }
             uint32_t word = lamp >> 5;
@@ -991,11 +1081,13 @@ void SceneEngine::flatLitRooms(uint8_t flat, char *out, size_t len) const {
                 lit = true;         // a short light counts as lit
             } else if (_eventOff[word] & bit) {
                 lit = false;        // and a dip counts as dark
+            } else if (perLamp) {
+                lit = _current[lamp] != 0;
             } else {
-                lit = (_flatLit[word] & bit) != 0;
+                lit = (_unitLit[word] & bit) != 0;
             }
             if (lit) {
-                seen |= (uint8_t)(1u << role);
+                seen |= (uint16_t)(1u << role);
                 break;
             }
         }
@@ -1053,7 +1145,7 @@ void SceneEngine::identify(const uint16_t *lamps, uint8_t n) {
         // What to give back. A lamp the scene owns is mid-fade, and _current
         // is where that fade had got to; a lamp the scene does not own is
         // whatever somebody else last set it to, which only the driver knows.
-        _identSaved[i] = (_lampGroup[lamp] != 0xFF || _lampFlat[lamp] != 0xFF)
+        _identSaved[i] = (_lampUnit[lamp] != 0xFF)
                        ? _current[lamp] : Lamps.intensity16(lamp);
     }
 }
@@ -1067,12 +1159,12 @@ void SceneEngine::releaseIdentify() {
     _identPhase = 0xFF;
 
     // Put every lamp back where the blink found it, in the driver and in
-    // _current together. For a lamp in a group or a flat that hands it to
-    // the scene's normal path, which fades on from there to whatever the
-    // target is now; writing only _current would leave a lamp lit whenever
-    // the target happened to equal the level the last phase left behind.
-    // For a lamp in neither, this is the whole restore: the per-lamp loop
-    // never touches it.
+    // _current together. For a lamp in a unit that hands it to the scene's
+    // normal path, which fades on from there to whatever the target is
+    // now; writing only _current would leave a lamp lit whenever the target
+    // happened to equal the level the last phase left behind. For a lamp in
+    // no unit, this is the whole restore: the per-lamp loop never touches
+    // it.
     uint16_t count = Lamps.count();
     bool changed = false;
     for (uint8_t i = 0; i < n; i++) {
@@ -1140,7 +1232,7 @@ void SceneEngine::tick() {
     if (_sim != _eventSim || _doy != _eventDoy) {
         _eventSim = _sim;
         _eventDoy = _doy;
-        evaluateFlats();            // the rooms first: the events read them
+        evaluateUnits();            // the rooms first: the events read them
         evaluateEvents();
     }
 
@@ -1165,26 +1257,23 @@ void SceneEngine::tick() {
         uint8_t level;              // the owner's brightness and fade
         uint16_t ownerFade;
 
-        uint8_t f = _lampFlat[lamp];
-        if (f != 0xFF) {
-            // Owned by a flat: evaluateFlats() has already decided, so this
-            // is two bit tests. Its group entry was cleared in rebuild().
-            const FlatConfig &F = _cfg.flats[f];
-            level = F.level;
-            ownerFade = F.fadeMs;
-            base = (_flatLit[word] & bit) ? (uint16_t)(F.level * 257) : 0;
-            flicker = (_flatTv[word] & bit) != 0;
-        } else {
-            uint8_t g = _lampGroup[lamp];
-            if (g == 0xFF) {
-                continue;               // not in the scene: leave it alone
-            }
-            const GroupConfig &G = _cfg.groups[g];
-            level = G.level;
-            ownerFade = G.fadeMs;
+        uint8_t u = _lampUnit[lamp];
+        if (u == 0xFF) {
+            continue;               // not in the scene: leave it alone
+        }
+        const ModelConfig &M = _cfg.models[_cfg.units[u].model];
+        level = M.level;
+        ownerFade = M.fadeMs;
 
+        if (M.kind == ModelKind::Rhythm || !M.individual) {
+            // The room has already decided, in evaluateUnits(), so this is
+            // two bit tests.
+            base = (_unitLit[word] & bit) ? (uint16_t)(M.level * 257) : 0;
+            flicker = (_unitTv[word] & bit) != 0;
+        } else {
+            // A lamp with a moment of its own.
             LampMoments moments;
-            base = targetLevel(lamp, G, flicker, moments);
+            base = targetLevel(lamp, M, flicker, moments);
         }
 
         // The activity layer, decided above: a short light overrides the base

@@ -43,36 +43,17 @@ void setup() {
 
     Scene.begin();              // /scene.json, or an empty scene if there is none
 
-    // Seed the example town when there is nothing to look at: no stored
-    // scene, or a stored scene whose groups hold no lamp at all, which is
-    // what a first boot with no hardware attached used to leave behind.
-    // Seeding needs lamps: with Lamps.count() at 0 every group would come
-    // out empty, and an empty scene would then be stored and never seeded
-    // again.
-    bool sceneEmpty = true;
-    for (uint8_t g = 0; g < Scene.config().groupCount; g++) {
-        if (Scene.config().groups[g].lampCount() > 0) {
-            sceneEmpty = false;
-            break;
-        }
-    }
-    if (Lamps.count() > 0 && sceneEmpty) {
-        // Static: a SceneConfig is about 14 kB, too much for the stack.
+    // Seed the nine models when there is nothing to start from: no stored
+    // scene, or one whose models were never written. No units come with
+    // them, since only the person building the layout knows what is on it,
+    // and a model needs no lamps to exist.
+    bool sceneEmpty = (Scene.config().modelCount == 0);
+    if (sceneEmpty) {
+        // Static: a SceneConfig is about 16 kB, too much for the stack.
         static SceneConfig s;
-        auto group = [&](const char *name, Behaviour b, uint16_t from, uint16_t to) {
-            GroupConfig &G = s.groups[s.groupCount++];
-            G.setPreset(b);
-            strlcpy(G.name, name, SCENE_NAME_LEN);
-            G.clearLamps();
-            for (uint16_t i = from; i <= to && i < Lamps.count(); i++) G.add(i);
-        };
-        group("Street lights", Behaviour::Street,   0,  15);
-        group("Flats",         Behaviour::Home,     16, 95);
-        group("Shops",         Behaviour::Shop,     96, 119);
-        group("Pub and grill", Behaviour::Late,     120, 127);
-        group("Kiosk, church", Behaviour::AllNight, 128, 143);
+        s.seedTemplates();
         Scene.apply(s, true);
-        Serial.println("scene: seeded example town");
+        Serial.println("scene: seeded the nine models");
     }
 
 #ifdef MINIWORLD_ERASE_NET
