@@ -10,13 +10,12 @@
     "use strict";
 
     var el = App.el;
-    // Households first, then the fixtures, then Off: the order a town is
-    // built in, not the order the firmware numbers them in.
-    var BEHAVIOURS = ["home", "family", "elderly", "nightowl", "away",
-                      "shop", "late", "street", "allnight", "off"];
+    // Homes first, then the fixtures, then Off: the order a town is built
+    // in, not the order the firmware numbers them in. A household with
+    // rooms is a flat on the Houses view, not a behaviour here.
+    var BEHAVIOURS = ["home", "shop", "late", "street", "allnight", "off"];
     var BEH_LABELS = {
-        home: "Home", family: "Family", elderly: "Elderly couple",
-        nightowl: "Night owl", away: "Away", shop: "Shop", late: "Pub, late",
+        home: "Home", shop: "Shop", late: "Pub, late",
         street: "Street", allnight: "All night", off: "Off"
     };
     var ANCHORS = ["dusk", "dawn", "clock"];

@@ -75,7 +75,7 @@ it, and every web API stays a pure `(method, path, body)` function.
 | `LampWebApi.h/.cpp` | `/api/lamps/config, status, probe, test` | Per-bus status object done, checked against the mock |
 | `RgbLamps.h` | `setColor(module, r, g, b)` over Lamps | Done |
 | `Sun.h/.cpp` | Sunrise/sunset/civil twilight | **Verified** against Lund almanac |
-| `Scene.h/.cpp` | Groups, behaviours (incl. the four household presets), flats (households with rooms, several lamps per room), clock, location, JSON | Compiles, reviewed, not yet run on hardware |
+| `Scene.h/.cpp` | Groups and their behaviours (street, home, shop, late, allnight, off), flats (households with rooms, several lamps per room), clock, location, JSON | Compiles, reviewed, not yet run on hardware |
 | `SceneEngine.h/.cpp` | The simulation, plus the event layer (day lights, dips, night wake-ups) and `evaluateFlats()` for the flats' rooms, one draw per room so all its lamps switch together | Compiles, reviewed, not yet run on hardware |
 | `SceneWebApi.h/.cpp` | `/api/scene/config, status, clock, identify, presets`; `identify` blinks one lamp, or up to eight of them, so a lamp or a whole room can be found on the layout | Done |
 | `NetConfig.h/.cpp` | `/net.json`: credentials, hostname, GUI password, NTP, TZ | Compiles, reviewed |
@@ -244,9 +244,10 @@ that run confirms or refutes.
 
 Open. Needs a flashed board, no phone or extra hardware.
 
-1. Set a group to Elderly, switch the clock to Manual and scrub through
-   02:00..05:00 in one-minute steps: some lamps of that group must show
-   one to four minute lights that are stable when scrubbing back.
+1. Set a group to Home with Night wake-ups at Often, switch the clock to
+   Manual and scrub through 02:00..05:00 in one-minute steps: some lamps
+   of that group must show one to four minute lights that are stable when
+   scrubbing back.
 2. Scrub through 07:00..09:00: short lights on the lamps that are off.
 3. Switch to Accelerated at 20 minutes per day and watch Home's lit
    count move outside dusk and dawn.
@@ -361,3 +362,12 @@ Open. Needs a flashed board, no phone or extra hardware.
   a cluster of lamps with no rooms to speak of. Evening and morning
   intervals are clipped to daylight so a clock-anchored rhythm does not
   light a living room at 19:00 in June.
+- **Why there is no "family" group behaviour.** The activity layer came
+  first and gave groups four household presets (family, elderly,
+  nightowl, away); flats then modelled the same households properly, one
+  rhythm per household. Both lived on for a while with the same labels
+  and different numbers. The group presets were retired on 2026-09-22 so
+  a household exists in one place. `parseBehaviour()` and the mock still
+  accept the four names and load them as `home`, so an older
+  `/scene.json` keeps working, and the Scene view lists only the six
+  behaviours that remain.

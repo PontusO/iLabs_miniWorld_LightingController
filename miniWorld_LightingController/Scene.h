@@ -18,8 +18,7 @@
         "seed": 1,                               changes everyone's habits
         "groups": [
           { "name": "Main street",
-            "behaviour": "street" | "home" | "shop" | "late" | "allnight" |
-                         "family" | "elderly" | "nightowl" | "away" | "off",
+            "behaviour": "street" | "home" | "shop" | "late" | "allnight" | "off",
             "lamps": [0, 1, "4-15", 20],
             "dayActivity": 0..3,       short lights and dips through the day
             "nightActivity": 0..3,     wake-ups through the night
@@ -57,7 +56,10 @@
 
     A flat is a household: a name, one daily rhythm and a handful of rooms
     that light in the natural order. Groups stay for everything that is not
-    a household. A lamp listed in a flat is owned by the flat and groups no
+    a household. Households were once group behaviours as well ("family",
+    "elderly", "nightowl", "away"); those were retired when flats arrived so
+    a household is modelled in one place, and a scene file that still names
+    one loads it as "home". A lamp listed in a flat is owned by the flat and groups no
     longer drive it; the first flat listing a lamp wins. Like a group, a
     flat is built from setPreset(type) and every field is then editable, so
     the type is a starting point and not a lock. A scene file without
@@ -90,10 +92,6 @@ enum class Behaviour : uint8_t {
     Shop,           // lit during opening hours
     Late,           // pub, restaurant: on at dusk, off in the small hours
     AllNight,       // on at dusk, off at dawn, always participates
-    Family,         // household: late bedtime, television, busy days
-    Elderly,        // household: early bedtime, quiet days, restless nights
-    NightOwl,       // household: up past midnight, no morning light
-    Away,           // timer lamp: the same two moments every evening, no life
     COUNT
 };
 

@@ -41,7 +41,8 @@ document for the whole project and the place to start reading.
   and Houses (households, their rooms, and the rhythm editor).
   Dark, phone first, nothing fetched from outside the board.
 - **Scene engine.** Lamps belong to groups with a behaviour: street, home,
-  shop, late, all night. Every lamp gets a stable personal habit derived
+  shop, late, all night. Anything that is a household with rooms is a
+  flat instead, below. Every lamp gets a stable personal habit derived
   from its index and a seed, so the town looks like the same people living
   there evening after evening, with a little daily jitter.
 - **Households.** A flat is a named household (Andersson, Storgatan 3)

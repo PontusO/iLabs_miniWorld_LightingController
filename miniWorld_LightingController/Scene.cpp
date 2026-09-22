@@ -65,54 +65,6 @@ void GroupConfig::setPreset(Behaviour b) {
             offAnchor = Anchor::Dawn;  offFrom = 0;   offTo = 15;
             break;
 
-        // The four households. They fill the same fields as the buildings
-        // above, so everything stays tunable per group.
-
-        case Behaviour::Family:
-            onAnchor = Anchor::Dusk;   onFrom = 0;    onTo = 180;
-            offAnchor = Anchor::Clock; offFrom = 1350; offTo = 1440;   // 22:30 to 00:00
-            litPercent = 90;
-            flickerPercent = 25;
-            morning = true;
-            level = 210;
-            fadeMs = 300;
-            dayActivity = 3;
-            nightActivity = 1;
-            break;
-
-        case Behaviour::Elderly:
-            onAnchor = Anchor::Dusk;   onFrom = -30;  onTo = 60;
-            offAnchor = Anchor::Clock; offFrom = 1260; offTo = 1335;   // 21:00 to 22:15
-            litPercent = 90;
-            flickerPercent = 8;
-            morning = true;
-            level = 180;
-            fadeMs = 400;
-            dayActivity = 2;
-            nightActivity = 3;
-            break;
-
-        case Behaviour::NightOwl:
-            onAnchor = Anchor::Dusk;   onFrom = 60;   onTo = 240;
-            offAnchor = Anchor::Clock; offFrom = 1470; offTo = 1590;   // 00:30 to 02:30
-            litPercent = 80;
-            flickerPercent = 30;
-            level = 200;
-            fadeMs = 300;
-            dayActivity = 1;
-            nightActivity = 1;
-            break;
-
-        case Behaviour::Away:
-            // A timer lamp: one flat in four, the same minutes every evening
-            // and no life at all, which is exactly how it should read.
-            onAnchor = Anchor::Clock;  onFrom = 1140; onTo = 1150;    // 19:00 to 19:10
-            offAnchor = Anchor::Clock; offFrom = 1350; offTo = 1360;   // 22:30 to 22:40
-            litPercent = 25;
-            level = 200;
-            fadeMs = 0;
-            break;
-
         default:
             onAnchor = Anchor::Clock;  onFrom = 0;    onTo = 0;
             offAnchor = Anchor::Clock; offFrom = 0;   offTo = 0;
@@ -252,7 +204,11 @@ void FlatConfig::setPreset(Household t) {
 // ---------------------------------------------------------------------------
 
 static const char *const behaviourNames[] = {
-    "off", "street", "home", "shop", "late", "allnight",
+    "off", "street", "home", "shop", "late", "allnight"
+};
+// Group behaviours that no longer exist: the households moved to flats. A
+// scene written while they were groups still loads, as "home".
+static const char *const retiredBehaviourNames[] = {
     "family", "elderly", "nightowl", "away"
 };
 static const char *const anchorNames[] = { "dusk", "dawn", "clock" };
@@ -274,6 +230,12 @@ bool SceneConfig::parseBehaviour(const char *s, Behaviour &out) {
     for (uint8_t i = 0; i < (uint8_t)Behaviour::COUNT; i++) {
         if (!strcasecmp(s, behaviourNames[i])) {
             out = (Behaviour)i;
+            return true;
+        }
+    }
+    for (const char *r : retiredBehaviourNames) {
+        if (!strcasecmp(s, r)) {
+            out = Behaviour::Home;
             return true;
         }
     }

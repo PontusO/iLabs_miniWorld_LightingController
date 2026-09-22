@@ -51,8 +51,10 @@ CAPTIVE_PROBES = (
 )
 
 # dayActivity 0 none, 1 low, 2 normal, 3 high; nightActivity 0 none, 1 rare,
-# 2 normal, 3 often. The four households (family, elderly, nightowl, away)
-# follow Behaviour in the firmware, which numbers them after allnight.
+# 2 normal, 3 often. Households are flats, not group behaviours; the four
+# names that once were (family, elderly, nightowl, away) load as "home",
+# as they do in the firmware.
+RETIRED_BEHAVIOURS = ("family", "elderly", "nightowl", "away")
 BEHAVIOUR_PRESETS = {
     "street": {
         "onAnchor": "dusk", "on": (-10, 5),
@@ -87,35 +89,6 @@ BEHAVIOUR_PRESETS = {
         "offAnchor": "dawn", "off": (0, 15),
         "litPercent": 100, "flickerPercent": 0, "morning": False,
         "level": 255, "fadeMs": 800,
-        "dayActivity": 0, "nightActivity": 0,
-    },
-    "family": {
-        "onAnchor": "dusk", "on": (0, 180),
-        "offAnchor": "clock", "off": (1350, 1440),
-        "litPercent": 90, "flickerPercent": 25, "morning": True,
-        "level": 210, "fadeMs": 300,
-        "dayActivity": 3, "nightActivity": 1,
-    },
-    "elderly": {
-        "onAnchor": "dusk", "on": (-30, 60),
-        "offAnchor": "clock", "off": (1260, 1335),
-        "litPercent": 90, "flickerPercent": 8, "morning": True,
-        "level": 180, "fadeMs": 400,
-        "dayActivity": 2, "nightActivity": 3,
-    },
-    "nightowl": {
-        "onAnchor": "dusk", "on": (60, 240),
-        "offAnchor": "clock", "off": (1470, 1590),
-        "litPercent": 80, "flickerPercent": 30, "morning": False,
-        "level": 200, "fadeMs": 300,
-        "dayActivity": 1, "nightActivity": 1,
-    },
-    # A timer lamp: one in four, the same minutes every evening, no life.
-    "away": {
-        "onAnchor": "clock", "on": (1140, 1150),
-        "offAnchor": "clock", "off": (1350, 1360),
-        "litPercent": 25, "flickerPercent": 0, "morning": False,
-        "level": 200, "fadeMs": 0,
         "dayActivity": 0, "nightActivity": 0,
     },
     "off": {
@@ -381,6 +354,8 @@ def group_from_json(o):
     if not isinstance(o, dict):
         raise ApiError(400, "group must be an object")
     behaviour = o.get("behaviour", "off")
+    if behaviour in RETIRED_BEHAVIOURS:
+        behaviour = "home"
     if behaviour not in BEHAVIOUR_PRESETS:
         raise ApiError(400, "unknown behaviour")
     g = dict(BEHAVIOUR_PRESETS[behaviour])
@@ -978,8 +953,7 @@ class SceneState:
 
     def presets_json(self):
         out = {}
-        for name in ("street", "home", "shop", "late", "allnight",
-                     "family", "elderly", "nightowl", "away"):
+        for name in ("street", "home", "shop", "late", "allnight"):
             p = BEHAVIOUR_PRESETS[name]
             out[name] = {
                 "onAnchor": p["onAnchor"],
