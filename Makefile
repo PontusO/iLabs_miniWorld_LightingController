@@ -16,6 +16,7 @@
 #   make web          build the embedded web GUI header and stop
 #   make mock         run the mock API server on port 8080
 #   make check        run the API checks against the mock server
+#   make test-mock    run the mock server's own unit tests
 #   make clean        remove generated headers and build directories
 #
 # Rules that keep a wrong image off the board, learnt the hard way:
@@ -64,7 +65,7 @@ BUILD_FLAGS := --build-path $(BUILD_PATH) \
 
 export ARDUINO_CLI FQBN
 
-.PHONY: all compile upload erase-net console pio web mock check clean check-tools
+.PHONY: all compile upload erase-net console pio web mock check test-mock clean check-tools
 
 all: compile
 
@@ -85,6 +86,9 @@ mock:
 
 check:
 	tools/apicheck.sh http://localhost:8080
+
+test-mock:
+	python3 -m unittest tools/test_mockserver.py
 
 # A fresh stamp header on every compile forces the sketch file to
 # recompile, so the boot banner carries this build's time even when no

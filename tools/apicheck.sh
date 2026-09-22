@@ -73,9 +73,10 @@ check POST /api/lamps/probe   200
 check POST /api/lamps/test    200 '{"level":128}'
 check GET  /api/scene/config  200
 check PUT  /api/scene/config  200 "$(fetch /api/scene/config)"
+check PUT  /api/scene/config  400 '{"units":[{"name":"x","model":"nosuch","rooms":[]}]}'
 check GET  /api/scene/status  200
 check PUT  /api/scene/clock   200 '{"mode":"manual","time":"19:40"}'
-check POST /api/scene/identify 200 '{"lamp":0}'
+check POST /api/scene/identify 200 '{"lamps":[0,1]}'
 check GET  /api/scene/presets 200
 check GET  /api/net/status    200
 check GET  /api/net/scan      200

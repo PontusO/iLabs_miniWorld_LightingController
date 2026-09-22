@@ -32,7 +32,6 @@ WEBDIR = Path(__file__).resolve().parent.parent / "web"
 
 LAMPS_MAX_LAMPS = 2048
 LAMPS_NUM_BUSES = 12
-SCENE_MAX_GROUPS = 16
 # SceneEngine::identify() blinks up to this many lamps together.
 IDENTIFY_MAX_LAMPS = 8
 
@@ -50,96 +49,161 @@ CAPTIVE_PROBES = (
     "/redirect",
 )
 
-# dayActivity 0 none, 1 low, 2 normal, 3 high; nightActivity 0 none, 1 rare,
-# 2 normal, 3 often. Households are flats, not group behaviours; the four
-# names that once were (family, elderly, nightowl, away) load as "home",
-# as they do in the firmware.
-RETIRED_BEHAVIOURS = ("family", "elderly", "nightowl", "away")
-BEHAVIOUR_PRESETS = {
-    "street": {
-        "onAnchor": "dusk", "on": (-10, 5),
-        "offAnchor": "dawn", "off": (-5, 15),
-        "litPercent": 100, "flickerPercent": 0, "morning": False,
-        "level": 255, "fadeMs": 4000,
-        "dayActivity": 0, "nightActivity": 0,
-    },
-    "home": {
-        "onAnchor": "dusk", "on": (0, 240),
-        "offAnchor": "clock", "off": (1320, 1470),
-        "litPercent": 85, "flickerPercent": 12, "morning": True,
-        "level": 200, "fadeMs": 300,
-        "dayActivity": 2, "nightActivity": 1,
-    },
-    "shop": {
-        "onAnchor": "clock", "on": (510, 540),
-        "offAnchor": "clock", "off": (1080, 1110),
-        "litPercent": 100, "flickerPercent": 0, "morning": False,
-        "level": 230, "fadeMs": 200,
-        "dayActivity": 1, "nightActivity": 0,
-    },
-    "late": {
-        "onAnchor": "dusk", "on": (-30, 30),
-        "offAnchor": "clock", "off": (1380, 1560),
-        "litPercent": 100, "flickerPercent": 0, "morning": False,
-        "level": 220, "fadeMs": 800,
-        "dayActivity": 1, "nightActivity": 0,
-    },
-    "allnight": {
-        "onAnchor": "dusk", "on": (-15, 0),
-        "offAnchor": "dawn", "off": (0, 15),
-        "litPercent": 100, "flickerPercent": 0, "morning": False,
-        "level": 255, "fadeMs": 800,
-        "dayActivity": 0, "nightActivity": 0,
-    },
-    "off": {
-        "onAnchor": "clock", "on": (0, 0),
-        "offAnchor": "clock", "off": (0, 0),
-        "litPercent": 0, "flickerPercent": 0, "morning": False,
-        "level": 0, "fadeMs": 800,
-        "dayActivity": 0, "nightActivity": 0,
-    },
+# Models and units: spec section 2. SCENE_MAX_MODELS / SCENE_MAX_UNITS /
+# UNIT_MAX_ROOMS / ROOM_MAX_RANGES mirror the firmware #defines; twenty-four
+# and not thirty-two, per Scene.h: a unit is about 460 bytes and thirty-two
+# put the board at 41 % of its RAM against the 39 % it had before models and
+# units. ROOM_NAMES is the Room enum order, used both for
+# /api/scene/presets "rooms" and for the order status letters are checked in.
+SCENE_NAME_LEN = 24
+SCENE_MAX_MODELS = 16
+SCENE_MAX_UNITS = 24
+UNIT_MAX_ROOMS = 12
+ROOM_MAX_RANGES = 8
+
+TEMPLATE_KEYS = ("family", "elderly", "nightowl", "away",
+                 "home", "shop", "pub", "street", "allnight")
+RHYTHM_TEMPLATE_KEYS = ("family", "elderly", "nightowl", "away")
+TEMPLATE_TITLES = {
+    "family": "Family", "elderly": "Elderly couple", "nightowl": "Night owl",
+    "away": "Away", "home": "Home", "shop": "Shop", "pub": "Pub",
+    "street": "Street light", "allnight": "All night",
 }
 
-# Flats: spec section 2. SCENE_MAX_FLATS / FLAT_MAX_ROOMS / ROOM_MAX_LAMPS
-# mirror the firmware #defines; ROOM_NAMES is the Room enum order, used both
-# for /api/scene/presets "rooms" and for the order status letters are checked
-# in.
-SCENE_MAX_FLATS = 32
-FLAT_MAX_ROOMS = 12
-ROOM_MAX_LAMPS = 8
-FLAT_TYPES = ("family", "elderly", "nightowl", "away", "custom")
-ROOM_NAMES = ("living", "kitchen", "bedroom", "bathroom", "hall", "other")
+ROOM_NAMES = ("living", "kitchen", "bedroom", "bathroom", "hall",
+              "front", "back", "sign", "other")
 ROOM_LETTERS = {
-    "living": "l", "kitchen": "k", "bedroom": "b",
-    "bathroom": "t", "hall": "h", "other": "o",
+    "living": "l", "kitchen": "k", "bedroom": "b", "bathroom": "t", "hall": "h",
+    "front": "f", "back": "r", "sign": "s", "other": "o",
 }
 
-# setPreset(type), weekday values, spec section 2 table. Ranges are minutes
-# since midnight, (from, to); away sets every range to (-1, -1). "custom"
-# has no entry here: setPreset(custom) reuses the family values (spec: "custom
-# | family values"), so flat_from_json/make_flat fall back to "family" for it.
-FLAT_HOUSEHOLD_PRESETS = {
-    "family": {
-        "wake": (390, 435), "leave": (450, 495), "home": (960, 1050), "bed": (1350, 1410),
-        "outPercent": 14, "tvPercent": 70, "level": 210, "fadeMs": 300,
-        "dayActivity": 3, "nightActivity": 1,
-    },
-    "elderly": {
-        "wake": (345, 390), "leave": (570, 630), "home": (720, 810), "bed": (1275, 1335),
-        "outPercent": 7, "tvPercent": 40, "level": 180, "fadeMs": 400,
-        "dayActivity": 2, "nightActivity": 3,
-    },
-    "nightowl": {
-        "wake": (570, 660), "leave": (690, 750), "home": (1140, 1260), "bed": (1485, 1575),
-        "outPercent": 28, "tvPercent": 80, "level": 200, "fadeMs": 300,
-        "dayActivity": 1, "nightActivity": 1,
-    },
-    "away": {
-        "wake": (-1, -1), "leave": (-1, -1), "home": (-1, -1), "bed": (-1, -1),
-        "outPercent": 0, "tvPercent": 0, "level": 200, "fadeMs": 0,
-        "dayActivity": 0, "nightActivity": 0,
-    },
+# The retired group behaviours (RETIRED_NAMES) and the behaviours a group
+# could carry (BEHAVIOUR_NAMES), spec section 5 point 4 and Scene.cpp's
+# migrateGroup(). "off" is not a template: it is the Home hours values with
+# litPercent forced to 0, never lit.
+BEHAVIOUR_NAMES = ("off", "street", "home", "shop", "late", "allnight")
+BEHAVIOUR_TEMPLATE = {
+    "off": "home", "street": "street", "home": "home",
+    "shop": "shop", "late": "pub", "allnight": "allnight",
 }
+RETIRED_NAMES = ("family", "elderly", "nightowl", "away")
+HOUSEHOLD_NAMES = ("family", "elderly", "nightowl", "away", "custom")
+
+
+def _fill_rhythm(key):
+    """Scene.cpp's fillRhythm(): the rhythm half plus the brightness and the
+    life that go with it. Every template that is not one of the four
+    households (every hours template, via Template::Family) takes these
+    entry defaults untouched but for the four moments."""
+    d = {
+        "weekend": True, "outPercent": 14, "tvPercent": 70,
+        "level": 210, "fadeMs": 300, "dayActivity": 3, "nightActivity": 1,
+        "wake": (390, 435), "leave": (450, 495), "home": (960, 1050), "bed": (1350, 1410),
+    }
+    if key == "elderly":
+        d.update(wake=(345, 390), leave=(570, 630), home=(720, 810), bed=(1275, 1335),
+                  outPercent=7, tvPercent=40, level=180, fadeMs=400,
+                  dayActivity=2, nightActivity=3)
+    elif key == "nightowl":
+        d.update(wake=(570, 660), leave=(690, 750), home=(1140, 1260), bed=(1485, 1575),
+                  outPercent=28, tvPercent=80, level=200, fadeMs=300,
+                  dayActivity=1, nightActivity=1)
+    elif key == "away":
+        # Nobody lives here this week. No rhythm at all.
+        d.update(wake=(-1, -1), leave=(-1, -1), home=(-1, -1), bed=(-1, -1),
+                  outPercent=0, tvPercent=0, level=200, fadeMs=0,
+                  dayActivity=0, nightActivity=0)
+    # else: family, or any hours key, keeps the entry defaults above.
+    return d
+
+
+def _fill_hours(key):
+    """Scene.cpp's fillHours(): the hours half plus the brightness and the
+    life that go with it. Every template that is not one of the five hours
+    templates (every rhythm template, via Template::Home) takes the Home
+    case below."""
+    d = {
+        "litPercent": 100, "flickerPercent": 0, "morning": False, "individual": False,
+        "level": 255, "fadeMs": 800, "dayActivity": 0, "nightActivity": 0,
+    }
+    if key == "shop":
+        d.update(onAnchor="clock", on=(510, 540), offAnchor="clock", off=(1080, 1110),
+                  level=230, fadeMs=200, dayActivity=1)
+    elif key == "pub":
+        d.update(onAnchor="dusk", on=(-30, 30), offAnchor="clock", off=(1380, 1560),
+                  level=220, dayActivity=1)
+    elif key == "street":
+        d.update(onAnchor="dusk", on=(-10, 5), offAnchor="dawn", off=(-5, 15), fadeMs=4000)
+    elif key == "allnight":
+        d.update(onAnchor="dusk", on=(-15, 0), offAnchor="dawn", off=(0, 15))
+    else:   # home, or any rhythm key, which carries the Home hours behind it
+        d.update(onAnchor="dusk", on=(0, 240), offAnchor="clock", off=(1320, 1470),
+                  litPercent=85, flickerPercent=12, morning=True, individual=True,
+                  level=200, fadeMs=300, dayActivity=2, nightActivity=1)
+    return d
+
+
+def _build_template(key):
+    """ModelConfig::setTemplate(): both halves, the model's own kind last so
+    its brightness, fade and life are its own. name is the template's title;
+    the caller renames it for anything but a fresh preset."""
+    rhythm = key in RHYTHM_TEMPLATE_KEYS
+    m = {}
+    if rhythm:
+        m.update(_fill_hours("home"))
+        m.update(_fill_rhythm(key))
+    else:
+        m.update(_fill_rhythm("family"))
+        m.update(_fill_hours(key))
+    m["kind"] = "rhythm" if rhythm else "hours"
+    m["name"] = TEMPLATE_TITLES[key]
+    return m
+
+
+# The nine templates, spec 2.3: a fresh device's models, and what
+# /api/scene/presets and "New model, start from" offer.
+MODEL_TEMPLATES = {key: _build_template(key) for key in TEMPLATE_KEYS}
+
+
+def make_model(key, **overrides):
+    """A fresh model from a template, for the mock's own fixtures: the
+    template's fields plus whatever the caller overrides directly."""
+    m = dict(MODEL_TEMPLATES[key])
+    m.update(overrides)
+    return m
+
+
+def clamp_model(m):
+    """SceneConfig::clamp()'s per-model loop, the numeric ranges: every field
+    keeps its meaning, its range and its clamp regardless of where it came
+    from (JSON, a migrated flat, a migrated group)."""
+    m["level"] = max(0, min(255, m["level"]))
+    m["fadeMs"] = max(0, min(60000, m["fadeMs"]))
+    m["dayActivity"] = max(0, min(3, m["dayActivity"]))
+    m["nightActivity"] = max(0, min(3, m["nightActivity"]))
+    m["outPercent"] = max(0, min(100, m["outPercent"]))
+    m["tvPercent"] = max(0, min(100, m["tvPercent"]))
+    m["litPercent"] = max(0, min(100, m["litPercent"]))
+    m["flickerPercent"] = max(0, min(100, m["flickerPercent"]))
+    for key in ("wake", "leave", "home", "bed"):
+        a, b = m[key]
+        a = max(-1, min(2879, a))
+        b = max(-1, min(2879, b))
+        if b < a:
+            b = a
+        m[key] = (a, b)
+    for key in ("on", "off"):
+        a, b = m[key]
+        a = max(-720, min(2879, a))
+        b = max(-720, min(2879, b))
+        if b < a:
+            b = a
+        m[key] = (a, b)
+    if m["onAnchor"] not in ("dusk", "dawn", "clock"):
+        m["onAnchor"] = "clock"
+    if m["offAnchor"] not in ("dusk", "dawn", "clock"):
+        m["offAnchor"] = "clock"
+    return m
 
 
 class ApiError(Exception):
@@ -266,9 +330,8 @@ class LampState:
 # Scene state, spec Scene.h / SceneWebApi.h
 # ---------------------------------------------------------------------------
 
-def compress_lamps(lamps):
-    """Mirrors Scene.cpp's lampsToJson: ints for single lamps, a pair of
-    ints for two adjacent, an "a-b" string for a longer run."""
+def _ranges(lamps):
+    """Sorted, deduplicated lamp numbers into a list of (from, to) runs."""
     s = sorted(set(lamps))
     out = []
     i = 0
@@ -278,16 +341,30 @@ def compress_lamps(lamps):
         j = i
         while j + 1 < n and s[j + 1] == s[j] + 1:
             j += 1
-        end = s[j]
-        if end == start:
-            out.append(start)
-        elif end == start + 1:
-            out.append(start)
-            out.append(end)
-        else:
-            out.append("%d-%d" % (start, end))
+        out.append((start, s[j]))
         i = j + 1
     return out
+
+
+def _tokenize_ranges(ranges):
+    """A list of (from, to) runs written the way a person would: a single
+    number, a pair, or an "a-b" string. Mirrors Scene.cpp's runToJson()."""
+    out = []
+    for a, b in ranges:
+        if b == a:
+            out.append(a)
+        elif b == a + 1:
+            out.append(a)
+            out.append(b)
+        else:
+            out.append("%d-%d" % (a, b))
+    return out
+
+
+def compress_lamps(lamps):
+    """Mirrors Scene.cpp's lampsToJson: ints for single lamps, a pair of
+    ints for two adjacent, an "a-b" string for a longer run."""
+    return _tokenize_ranges(_ranges(lamps))
 
 
 def expand_lamps(arr):
@@ -322,193 +399,473 @@ def fmt_time(minutes):
     return "%02d:%02d" % (m // 60, m % 60)
 
 
-def make_group(name, behaviour, lo, hi):
-    preset = BEHAVIOUR_PRESETS[behaviour]
-    g = dict(preset)
-    g["name"] = name
-    g["behaviour"] = behaviour
-    g["lamps"] = set(range(lo, hi + 1))
-    return g
+# ---------------------------------------------------------------------------
+# Models. Scene.h / Scene.cpp: a named way of behaving, no lamps.
+# ---------------------------------------------------------------------------
 
-
-def group_to_json(g):
-    return {
-        "name": g["name"],
-        "behaviour": g["behaviour"],
-        "lamps": compress_lamps(g["lamps"]),
-        "onAnchor": g["onAnchor"],
-        "on": list(g["on"]),
-        "offAnchor": g["offAnchor"],
-        "off": list(g["off"]),
-        "litPercent": g["litPercent"],
-        "flickerPercent": g["flickerPercent"],
-        "morning": g["morning"],
-        "level": g["level"],
-        "fadeMs": g["fadeMs"],
-        "dayActivity": g["dayActivity"],
-        "nightActivity": g["nightActivity"],
+def model_to_json(m):
+    """Mirrors SceneConfig::toJson()'s per-model loop: the common fields,
+    then only the half that matches the model's kind."""
+    o = {
+        "name": m["name"], "kind": m["kind"], "level": m["level"], "fadeMs": m["fadeMs"],
+        "dayActivity": m["dayActivity"], "nightActivity": m["nightActivity"],
     }
+    if m["kind"] == "rhythm":
+        o["weekend"] = m["weekend"]
+        o["wake"] = list(m["wake"])
+        o["leave"] = list(m["leave"])
+        o["home"] = list(m["home"])
+        o["bed"] = list(m["bed"])
+        o["outPercent"] = m["outPercent"]
+        o["tvPercent"] = m["tvPercent"]
+    else:
+        o["onAnchor"] = m["onAnchor"]
+        o["on"] = list(m["on"])
+        o["offAnchor"] = m["offAnchor"]
+        o["off"] = list(m["off"])
+        o["litPercent"] = m["litPercent"]
+        o["flickerPercent"] = m["flickerPercent"]
+        o["morning"] = m["morning"]
+        o["individual"] = m["individual"]
+    return o
 
 
-def group_from_json(o):
+def model_from_json(o, models_so_far):
+    """Mirrors SceneConfig::fromJson()'s per-model loop: setTemplate() first
+    (absent means the template's value), then the name (required, unique
+    case-insensitively against the models already read this save), then
+    whatever the JSON overrides. models_so_far is the list being built, not
+    yet holding this model, the same self-exclusion uniqueName() gets from
+    being called with self == the not-yet-reached index."""
     if not isinstance(o, dict):
-        raise ApiError(400, "group must be an object")
-    behaviour = o.get("behaviour", "off")
-    if behaviour in RETIRED_BEHAVIOURS:
-        behaviour = "home"
-    if behaviour not in BEHAVIOUR_PRESETS:
-        raise ApiError(400, "unknown behaviour")
-    g = dict(BEHAVIOUR_PRESETS[behaviour])
-    g["name"] = str(o.get("name", ""))[:23]
-    g["behaviour"] = behaviour
-    g["lamps"] = expand_lamps(o.get("lamps", []))
-    if isinstance(o.get("onAnchor"), str):
-        g["onAnchor"] = o["onAnchor"]
-    if isinstance(o.get("offAnchor"), str):
-        g["offAnchor"] = o["offAnchor"]
-    on = o.get("on")
-    if isinstance(on, list) and len(on) == 2:
-        g["on"] = (on[0], on[1])
-    off = o.get("off")
-    if isinstance(off, list) and len(off) == 2:
-        g["off"] = (off[0], off[1])
-    for key in ("litPercent", "flickerPercent", "level", "fadeMs"):
-        if isinstance(o.get(key), int):
-            g[key] = o[key]
-    if isinstance(o.get("morning"), bool):
-        g["morning"] = o["morning"]
-    # Absent means the preset's value, the way SceneConfig::fromJson reads a
-    # scene written before the activity layer existed. clamp() caps both at 3.
-    for key in ("dayActivity", "nightActivity"):
+        raise ApiError(400, "model must be an object")
+
+    kind_raw = o.get("kind", "")
+    kind = kind_raw.lower() if isinstance(kind_raw, str) else ""
+    if kind not in ("rhythm", "hours"):
+        raise ApiError(400, "unknown model kind")
+
+    m = make_model("family" if kind == "rhythm" else "home")
+    m["kind"] = kind
+
+    name = o.get("name", "")
+    if not isinstance(name, str) or not name:
+        raise ApiError(400, "model name required")
+    name = name[:SCENE_NAME_LEN - 1]
+    for existing in models_so_far:
+        if existing["name"].lower() == name.lower():
+            raise ApiError(400, "duplicate model name")
+    m["name"] = name
+
+    for key in ("level", "fadeMs", "dayActivity", "nightActivity"):
         v = o.get(key)
         if isinstance(v, int) and not isinstance(v, bool):
-            g[key] = max(0, min(3, v))
-    return g
+            m[key] = v
+
+    if kind == "rhythm":
+        if isinstance(o.get("weekend"), bool):
+            m["weekend"] = o["weekend"]
+        for key in ("wake", "leave", "home", "bed"):
+            v = o.get(key)
+            if (isinstance(v, list) and len(v) == 2
+                    and all(isinstance(x, int) and not isinstance(x, bool) for x in v)):
+                m[key] = (v[0], v[1])
+        for key in ("outPercent", "tvPercent"):
+            v = o.get(key)
+            if isinstance(v, int) and not isinstance(v, bool):
+                m[key] = v
+    else:
+        for key in ("onAnchor", "offAnchor"):
+            v = o.get(key)
+            if isinstance(v, str) and v.lower() in ("dusk", "dawn", "clock"):
+                m[key] = v.lower()
+        for key in ("on", "off"):
+            v = o.get(key)
+            if (isinstance(v, list) and len(v) == 2
+                    and all(isinstance(x, int) and not isinstance(x, bool) for x in v)):
+                m[key] = (v[0], v[1])
+        for key in ("litPercent", "flickerPercent"):
+            v = o.get(key)
+            if isinstance(v, int) and not isinstance(v, bool):
+                m[key] = v
+        if isinstance(o.get("morning"), bool):
+            m["morning"] = o["morning"]
+        if isinstance(o.get("individual"), bool):
+            m["individual"] = o["individual"]
+
+    return clamp_model(m)
 
 
 # ---------------------------------------------------------------------------
-# Flats, spec section 2 (model), 3.5 (status) and 4.4 (this mock)
+# Units and their rooms. Scene.h / Scene.cpp: a thing on the layout, a name,
+# a building label, a model by name, and rooms of lamp ranges.
 # ---------------------------------------------------------------------------
 
-def make_flat(name, building, ftype, weekend, room_lamps_roles):
-    """Seed helper, the flat equivalent of make_group: setPreset(ftype) then
-    the fixed fields, no further overrides. A room's lamps are given as one
-    number or as a list of them."""
-    preset = FLAT_HOUSEHOLD_PRESETS["family" if ftype == "custom" else ftype]
-    f = dict(preset)
-    f["name"] = name
-    f["building"] = building
-    f["type"] = ftype
-    f["weekend"] = weekend
-    f["rooms"] = [
-        {"lamps": sorted(set(lamps if isinstance(lamps, (list, tuple)) else [lamps])),
-         "role": role}
-        for lamps, role in room_lamps_roles
-    ]
-    return f
+def find_model(models, name):
+    """SceneConfig::findModel(): case-insensitive, -1 for an absent, empty
+    or wrong-type name (mirrors `o["model"] | ""`, which falls back to ""
+    for anything that is not a JSON string), which is how an unresolved
+    "model" key ends up at "unknown model" rather than a distinct
+    empty-name error."""
+    if not isinstance(name, str) or not name:
+        return -1
+    for i, m in enumerate(models):
+        if m["name"].lower() == name.lower():
+            return i
+    return -1
 
 
-def flat_to_json(f):
+def ranges_from_json(arr):
+    """A room's lamps, spec 2.1: up to eight ranges. expand_lamps() gives
+    the set of lamp numbers named by the array (single numbers and "a-b"
+    strings); the runs in that set, sorted, are the ranges. This is
+    simpler than RoomConfig::add()'s order-preserving merge and gives the
+    same result for lamps listed in ascending order, which is how every
+    fixture and the GUI write them. Mirrors the "too many ranges" limit of
+    roomRangesFromJson()/RoomConfig::add()."""
+    lamps = expand_lamps(arr)
+    ranges = _ranges(lamps)
+    if len(ranges) > ROOM_MAX_RANGES:
+        raise ApiError(400, "too many ranges")
+    return ranges
+
+
+def ranges_to_json(ranges):
+    """A room's stored ranges back to the JSON list form. Mirrors
+    roomLampsToJson(): the ranges are written in the order they are stored,
+    so [0, "4-15"] round-trips as [0, "4-15"] and merged runs stay merged."""
+    return _tokenize_ranges(ranges)
+
+
+def room_from_json(o):
+    """Mirrors Scene.cpp's roomFromJson(): "lamps" is the list form, "lamp"
+    is the legacy single-lamp form, and an absent or wrong-type role
+    defaults to "other"; a role that is a string but not one of the nine is
+    an error."""
+    if not isinstance(o, dict):
+        raise ApiError(400, "room must be an object")
+
+    ranges = []
+    ls = o.get("lamps")
+    if isinstance(ls, list):
+        ranges = ranges_from_json(ls)
+    else:
+        lamp = o.get("lamp")
+        if isinstance(lamp, int) and not isinstance(lamp, bool):
+            if lamp < 0 or lamp >= LAMPS_MAX_LAMPS:
+                raise ApiError(400, "room lamp index out of range")
+            ranges = [(lamp, lamp)]
+
+    role_val = o.get("role")
+    if isinstance(role_val, str):
+        role = role_val.lower()
+        if role not in ROOM_NAMES:
+            raise ApiError(400, "unknown room role")
+    else:
+        role = "other"
+
+    return {"ranges": ranges, "role": role}
+
+
+def make_unit(name, building, model, rooms):
+    """Seed helper, the unit equivalent of the old make_flat: rooms is a
+    list of (lamps, role) pairs, lamps being one lamp number, a list of
+    them (compressed into ranges), or a list of (from, to) tuples given
+    directly."""
+    room_list = []
+    for lamps, role in rooms:
+        if isinstance(lamps, int):
+            ranges = [(lamps, lamps)]
+        elif lamps and isinstance(lamps[0], (list, tuple)):
+            ranges = [tuple(r) for r in lamps]
+        else:
+            ranges = _ranges(lamps)
+        room_list.append({"ranges": ranges, "role": role})
+    return {"name": name, "building": building, "model": model, "rooms": room_list}
+
+
+def unit_to_json(u):
     return {
-        "name": f["name"],
-        "building": f["building"],
-        "type": f["type"],
-        "weekend": f["weekend"],
-        # A room's lamps are written like a group's: single numbers and
-        # "a-b" strings, through the same helper.
-        "rooms": [{"lamps": compress_lamps(r["lamps"]), "role": r["role"]}
-                  for r in f["rooms"]],
-        "wake": list(f["wake"]),
-        "leave": list(f["leave"]),
-        "home": list(f["home"]),
-        "bed": list(f["bed"]),
-        "outPercent": f["outPercent"],
-        "tvPercent": f["tvPercent"],
-        "level": f["level"],
-        "fadeMs": f["fadeMs"],
-        "dayActivity": f["dayActivity"],
-        "nightActivity": f["nightActivity"],
+        "name": u["name"],
+        "building": u["building"],
+        "model": u["model"],
+        "rooms": [{"lamps": ranges_to_json(r["ranges"]), "role": r["role"]}
+                  for r in u["rooms"]],
     }
 
 
-def flat_from_json(o, index):
-    """FlatConfig::fromJson: setPreset(type) first, then present fields
-    override (absent-means-preset, like groups), then clamp() (spec 2)."""
+def unit_from_json(o, models):
+    """Mirrors SceneConfig::fromJson()'s per-unit loop: the model is
+    resolved by name against the models the scene has now (whichever the
+    caller passes: the ones just read, or the ones already stored), which
+    is also what refuses a save naming a model that is not there."""
+    if not isinstance(o, dict):
+        raise ApiError(400, "unit must be an object")
+
+    mi = find_model(models, o.get("model", ""))
+    if mi < 0:
+        raise ApiError(400, "unknown model")
+
+    u = {
+        "name": str(o.get("name", ""))[:SCENE_NAME_LEN - 1],
+        "building": str(o.get("building", ""))[:SCENE_NAME_LEN - 1],
+        "model": models[mi]["name"],
+        "rooms": [],
+    }
+    rooms_in = o.get("rooms")
+    if not isinstance(rooms_in, list):
+        rooms_in = []
+    for r in rooms_in:
+        if len(u["rooms"]) >= UNIT_MAX_ROOMS:
+            raise ApiError(400, "too many rooms in a unit")
+        u["rooms"].append(room_from_json(r))
+    return u
+
+
+def clamp_units(units):
+    """SceneConfig::clamp()'s dedupUnitRooms(): a lamp belongs to one unit
+    only, the first room of the first unit that lists it wins, and a room
+    left with nothing is not a room. Simplified from the firmware's
+    order-preserving range split: a claimed lamp is removed by expanding to
+    individual lamps and re-detecting runs, and anything past the
+    eight-range cap is dropped rather than refused, as clamp() does."""
+    claimed = set()
+    for u in units:
+        kept = []
+        for room in u["rooms"]:
+            lamps = []
+            for a, b in room["ranges"]:
+                lamps.extend(range(a, b + 1))
+            free = [l for l in lamps if l not in claimed]
+            if not free:
+                continue
+            claimed.update(free)
+            kept.append({"ranges": _ranges(free)[:ROOM_MAX_RANGES], "role": room["role"]})
+        u["rooms"] = kept
+    return units
+
+
+# ---------------------------------------------------------------------------
+# Migration. Spec section 5: a document with "groups" or "flats" and no
+# "models" was written before models and units existed. Flats first, so
+# their unit indices, and with them their room keys and their household
+# draws, stay what they are today; then groups.
+# ---------------------------------------------------------------------------
+
+def _same_rhythm(a, b):
+    """Did this flat keep the rhythm its household type gives? Everything
+    the rhythm half carries, and the brightness and the life that go with
+    it; the name is not part of it. Mirrors Scene.cpp's sameRhythm()."""
+    keys = ("weekend", "wake", "leave", "home", "bed", "outPercent", "tvPercent",
+            "level", "fadeMs", "dayActivity", "nightActivity")
+    return all(a[k] == b[k] for k in keys)
+
+
+def _unique_name(models, name, self_index=None):
+    """Mirrors Scene.cpp's uniqueName(): an empty name starts from the Home
+    title, and a name already taken (case-insensitively, excluding
+    self_index) gets " 2", " 3" and so on, with the base trimmed so the
+    suffix fits in SCENE_NAME_LEN."""
+    if not name:
+        name = TEMPLATE_TITLES["home"]
+    base = name
+    for n in range(2, 100):
+        taken = False
+        for i, m in enumerate(models):
+            if i == self_index:
+                continue
+            if m["name"].lower() == name.lower():
+                taken = True
+                break
+        if not taken:
+            return name
+        suffix = " %d" % n
+        keep = SCENE_NAME_LEN - 1 - len(suffix)
+        if keep > len(base):
+            keep = len(base)
+        name = base[:keep] + suffix
+    return name
+
+
+def migrate_flat(o):
+    """One old flat: a rhythm model with the household's day, and a unit
+    with the flat's name, building and rooms. Returns
+    (model, unit, template_key, custom). Mirrors Scene.cpp's migrateFlat()."""
     if not isinstance(o, dict):
         raise ApiError(400, "flat must be an object")
 
-    ftype = o.get("type", "family")
-    if ftype not in FLAT_TYPES:
+    ftype_raw = o.get("type", "family")
+    ftype = ftype_raw.lower() if isinstance(ftype_raw, str) else ""
+    if ftype not in HOUSEHOLD_NAMES:
         raise ApiError(400, "unknown household type")
-    preset = FLAT_HOUSEHOLD_PRESETS["family" if ftype == "custom" else ftype]
-    f = dict(preset)
-    f["type"] = ftype
+    custom = (ftype == "custom")
+    tmpl_key = "family" if custom else ftype
+    m = make_model(tmpl_key)
 
-    # clamp(): name non-empty, name defaults to "Flat n"; both truncated to
-    # SCENE_NAME_LEN - 1 like group names.
-    name = str(o.get("name", ""))[:23].strip()
-    f["name"] = name if name else "Flat %d" % (index + 1)
-    f["building"] = str(o.get("building", ""))[:23]
-    f["weekend"] = bool(o.get("weekend", False))
+    u = {
+        "name": str(o.get("name", ""))[:SCENE_NAME_LEN - 1],
+        "building": str(o.get("building", ""))[:SCENE_NAME_LEN - 1],
+        "model": None,
+        "rooms": [],
+    }
+    if isinstance(o.get("weekend"), bool):
+        m["weekend"] = o["weekend"]
 
-    rooms_in = o.get("rooms", [])
+    rooms_in = o.get("rooms")
     if not isinstance(rooms_in, list):
-        raise ApiError(400, "rooms must be an array")
-    # clamp(): roomCount 0..12.
-    rooms = []
-    used = set()
-    for r in rooms_in[:FLAT_MAX_ROOMS]:
-        if not isinstance(r, dict):
-            raise ApiError(400, "room must be an object")
-        if "lamps" in r:
-            # Written like a group's lamps, read by the same helper, which
-            # is also what keeps every lamp below LAMPS_MAX_LAMPS.
-            lamps = expand_lamps(r["lamps"])
-        else:
-            # The old one-lamp room, read as a list of one.
-            lamp = r.get("lamp", 0)
-            if not isinstance(lamp, int) or isinstance(lamp, bool):
-                lamp = 0
-            lamps = {max(0, min(LAMPS_MAX_LAMPS - 1, lamp))}
-        if len(lamps) > ROOM_MAX_LAMPS:
-            raise ApiError(400, "room has more than 8 lamps")
-        role = r.get("role")
-        if role not in ROOM_NAMES:
-            role = "other"
-        # clamp(): a lamp another room of this flat already lists belongs to
-        # that room, and a room left with nothing is dropped.
-        lamps = sorted(lamps - used)
-        if not lamps:
-            continue
-        used.update(lamps)
-        rooms.append({"lamps": lamps, "role": role})
-    f["rooms"] = rooms
+        rooms_in = []
+    for r in rooms_in:
+        if len(u["rooms"]) >= UNIT_MAX_ROOMS:
+            raise ApiError(400, "too many rooms in a unit")
+        u["rooms"].append(room_from_json(r))
 
     for key in ("wake", "leave", "home", "bed"):
         v = o.get(key)
         if (isinstance(v, list) and len(v) == 2
                 and all(isinstance(x, int) and not isinstance(x, bool) for x in v)):
-            frm, to = v
-            # clamp(): ranges ordered (to >= from).
-            if to < frm:
-                to = frm
-            f[key] = (frm, to)
-
-    for key in ("outPercent", "tvPercent"):
-        v = o.get(key)
-        if isinstance(v, int) and not isinstance(v, bool):
-            f[key] = max(0, min(100, v))
+            m[key] = (v[0], v[1])
+    if isinstance(o.get("outPercent"), int) and not isinstance(o.get("outPercent"), bool):
+        m["outPercent"] = o["outPercent"]
+    if isinstance(o.get("tvPercent"), int) and not isinstance(o.get("tvPercent"), bool):
+        m["tvPercent"] = o["tvPercent"]
     if isinstance(o.get("level"), int) and not isinstance(o.get("level"), bool):
-        f["level"] = max(0, min(255, o["level"]))
+        m["level"] = o["level"]
     if isinstance(o.get("fadeMs"), int) and not isinstance(o.get("fadeMs"), bool):
-        f["fadeMs"] = max(0, o["fadeMs"])
+        m["fadeMs"] = o["fadeMs"]
     for key in ("dayActivity", "nightActivity"):
         v = o.get(key)
         if isinstance(v, int) and not isinstance(v, bool):
-            f[key] = max(0, min(3, v))
+            m[key] = v
 
-    return f
+    return clamp_model(m), u, tmpl_key, custom
 
+
+def migrate_group(o):
+    """One old group: an hours model with the behaviour's habits, and, when
+    it had lamps, the rooms (role "other", eight ranges each, more rooms as
+    needed) a unit of the same name would need. Returns
+    (model, rooms, raw_has_lamps); the caller decides whether there is room
+    for another unit. Mirrors Scene.cpp's migrateGroup()."""
+    if not isinstance(o, dict):
+        raise ApiError(400, "group must be an object")
+
+    b = o.get("behaviour", "off")
+    bl = b.lower() if isinstance(b, str) else "off"
+    if bl in BEHAVIOUR_NAMES:
+        pass
+    elif bl in RETIRED_NAMES:
+        # The four household behaviours retired when flats arrived. They
+        # loaded as "home" then and they migrate as Home now.
+        bl = "home"
+    else:
+        raise ApiError(400, "unknown behaviour")
+
+    tmpl_key = BEHAVIOUR_TEMPLATE[bl]
+    m = make_model(tmpl_key)
+    if bl == "off":
+        # Off: lit by nothing, at no time, with no life on top.
+        m.update(onAnchor="clock", on=(0, 0), offAnchor="clock", off=(0, 0),
+                 litPercent=0, flickerPercent=0, morning=False,
+                 level=0, fadeMs=800, dayActivity=0, nightActivity=0)
+    # Every lamp of a group kept its own moment inside the windows, its own
+    # chance of taking part and its own television.
+    m["individual"] = True
+    m["name"] = str(o.get("name", ""))[:SCENE_NAME_LEN - 1]
+
+    for key in ("onAnchor", "offAnchor"):
+        v = o.get(key)
+        if isinstance(v, str) and v.lower() in ("dusk", "dawn", "clock"):
+            m[key] = v.lower()
+    for key in ("on", "off"):
+        v = o.get(key)
+        if (isinstance(v, list) and len(v) == 2
+                and all(isinstance(x, int) and not isinstance(x, bool) for x in v)):
+            m[key] = (v[0], v[1])
+    for key in ("litPercent", "flickerPercent"):
+        v = o.get(key)
+        if isinstance(v, int) and not isinstance(v, bool):
+            m[key] = v
+    if isinstance(o.get("morning"), bool):
+        m["morning"] = o["morning"]
+    if isinstance(o.get("level"), int) and not isinstance(o.get("level"), bool):
+        m["level"] = o["level"]
+    if isinstance(o.get("fadeMs"), int) and not isinstance(o.get("fadeMs"), bool):
+        m["fadeMs"] = o["fadeMs"]
+    for key in ("dayActivity", "nightActivity"):
+        v = o.get(key)
+        if isinstance(v, int) and not isinstance(v, bool):
+            m[key] = v
+    clamp_model(m)
+
+    lamps_in = o.get("lamps", [])
+    raw_has_lamps = isinstance(lamps_in, list) and len(lamps_in) > 0
+    lampset = expand_lamps(lamps_in) if isinstance(lamps_in, list) else set()
+    all_ranges = _ranges(lampset)
+    rooms = []
+    for i in range(0, len(all_ranges), ROOM_MAX_RANGES):
+        if len(rooms) >= UNIT_MAX_ROOMS:
+            raise ApiError(400, "too many rooms in a unit")
+        rooms.append({"ranges": all_ranges[i:i + ROOM_MAX_RANGES], "role": "other"})
+
+    return m, rooms, raw_has_lamps
+
+
+def migrate_old(data):
+    """Flats first, then groups, spec section 5. Returns (models, units)."""
+    models = []
+    units = []
+    from_template = {}   # template key -> model index, for flats on a template
+
+    flats_in = data.get("flats")
+    if not isinstance(flats_in, list):
+        flats_in = []
+    for o in flats_in:
+        if len(units) >= SCENE_MAX_UNITS:
+            raise ApiError(400, "too many units")
+        flat_model, unit, tmpl_key, custom = migrate_flat(o)
+        tmpl_model = make_model(tmpl_key)
+
+        on_template = (not custom) and _same_rhythm(flat_model, tmpl_model)
+        mi = from_template.get(tmpl_key, -1) if on_template else -1
+        if mi < 0:
+            if len(models) >= SCENE_MAX_MODELS:
+                raise ApiError(400, "too many models")
+            m = dict(tmpl_model) if on_template else dict(flat_model)
+            m["name"] = TEMPLATE_TITLES[tmpl_key] if on_template else unit["name"]
+            m["name"] = _unique_name(models, m["name"])
+            models.append(m)
+            mi = len(models) - 1
+            if on_template:
+                from_template[tmpl_key] = mi
+        unit["model"] = models[mi]["name"]
+        units.append(unit)
+
+    groups_in = data.get("groups")
+    if not isinstance(groups_in, list):
+        groups_in = []
+    for o in groups_in:
+        if len(models) >= SCENE_MAX_MODELS:
+            raise ApiError(400, "too many models")
+        m, rooms, raw_has_lamps = migrate_group(o)
+        can_place = len(units) < SCENE_MAX_UNITS
+        if not can_place and raw_has_lamps:
+            # Lamps with nowhere to go: the model alone would be a scene
+            # missing a street, so the whole document is refused.
+            raise ApiError(400, "too many units")
+        m["name"] = _unique_name(models, m["name"])
+        models.append(m)
+        if can_place and rooms:
+            units.append({"name": m["name"], "building": "", "model": m["name"], "rooms": rooms})
+
+    return models, units
+
+
+# ---------------------------------------------------------------------------
+# Status. SceneWebApi::statusJson() / SceneEngine::unitState() /
+# SceneEngine::unitLitRooms(), simplified to range midpoints with no
+# per-day draw and no per-lamp jitter, which is close enough to give the
+# eight state words and the lkbthfrso letters spec 3.3 and 9.3/9.4 describe.
+# ---------------------------------------------------------------------------
 
 def _in_range(x, lo, hi):
     """True when x falls in [lo, hi] mod 1440; the interval may cross
@@ -521,6 +878,12 @@ def _in_range(x, lo, hi):
     return x >= lo or x <= hi
 
 
+def _in_window(t, on, off):
+    """The absolute minute-line version, for an hours window: on/off may run
+    past 1440 to mean "tomorrow". Mirrors SceneEngine::inWindow()."""
+    return (t >= on and t < off) or (t + 1440 >= on and t + 1440 < off)
+
+
 def _range_mid(pair):
     a, b = pair
     if a < 0 or b < 0:
@@ -528,45 +891,70 @@ def _range_mid(pair):
     return (a + b) / 2.0
 
 
-def flat_status(f, minutes, is_weekday):
-    """Spec 3.5, simplified to the flat's range midpoints (no per-day draw,
-    no per-room jitter): state from the simulated minute, lit letters from
-    the room table (spec 3.2) evaluated at those same midpoints, plus a
-    once-in-ten-minutes bathroom night visit so a slept-in flat still looks
-    alive under the scrubber."""
+def _is_away(model):
+    """Mirrors ModelConfig::isAway(): a rhythm model with no wake and no
+    bed is the away household."""
+    return model["kind"] == "rhythm" and model["wake"][0] < 0 and model["bed"][0] < 0
+
+
+def _hours_window(model, dusk, dawn):
+    """The middle of each window, spec 9.3: anchorBase(on) + midpoint of on,
+    to anchorBase(off) + midpoint of off."""
+    def anchor_base(anchor, for_off):
+        if anchor == "dusk":
+            return dusk
+        if anchor == "dawn":
+            return dawn + 1440 if for_off else dawn
+        return 0   # clock
+
+    on_mid = (model["on"][0] + model["on"][1]) / 2.0
+    off_mid = (model["off"][0] + model["off"][1]) / 2.0
+    on = anchor_base(model["onAnchor"], False) + on_mid
+    off = anchor_base(model["offAnchor"], True) + off_mid
+    if off <= on:
+        off += 1440
+    return on, off
+
+
+def unit_status(u, model, minutes, is_weekday, dusk, dawn):
+    """Mirrors SceneEngine::unitState() and unitLitRooms(), spec 3.3 and
+    9.3/9.4, but from the model's windows directly rather than a per-day
+    draw: state, lit-letters."""
     m = minutes % 1440
+    roles_present = {r["role"] for r in u["rooms"]}
 
-    if f["type"] == "away":
-        lit = []
+    if model["kind"] == "hours":
+        on, off = _hours_window(model, dusk, dawn)
+        lit = _in_window(m, on, off)
+        by_clock = model["onAnchor"] == "clock" and model["offAnchor"] == "clock"
+        state = ("open" if lit else "closed") if by_clock else ("lit" if lit else "dark")
+        letters = [ROOM_LETTERS[r] for r in ROOM_NAMES if r in roles_present] if lit else []
+        return state, "".join(letters)
+
+    if _is_away(model):
+        # A timer lamp in the evening, in the living room, or the other
+        # room when there is no living room, and nothing else.
+        letters = []
         if _in_range(m, 19 * 60, 22 * 60 + 30):
-            roles_present = {r["role"] for r in f["rooms"]}
-            # "a living or other room, if present": living wins when both
-            # exist, same as the "first flat wins" ownership tie-break.
             if "living" in roles_present:
-                lit.append(ROOM_LETTERS["living"])
+                letters.append(ROOM_LETTERS["living"])
             elif "other" in roles_present:
-                lit.append(ROOM_LETTERS["other"])
-        return "away", "".join(lit)
+                letters.append(ROOM_LETTERS["other"])
+        return "away", "".join(letters)
 
-    wake_mid = _range_mid(f["wake"])
-    leave_mid = _range_mid(f["leave"])
-    home_mid = _range_mid(f["home"])
-    bed_mid = _range_mid(f["bed"])
+    wake_mid = _range_mid(model["wake"])
+    leave_mid = _range_mid(model["leave"])
+    home_mid = _range_mid(model["home"])
+    bed_mid = _range_mid(model["bed"])
 
     asleep = (wake_mid is not None and bed_mid is not None
               and _in_range(m, bed_mid, wake_mid))
-    leave_valid = f["leave"][0] >= 0 and f["leave"][1] >= 0
+    leave_valid = model["leave"][0] >= 0 and model["leave"][1] >= 0
     is_out = (not asleep and is_weekday and leave_valid
               and leave_mid is not None and home_mid is not None
               and _in_range(m, leave_mid, home_mid))
 
-    if asleep:
-        state = "asleep"
-    elif is_out:
-        state = "out"
-    else:
-        state = "awake"
-
+    state = "asleep" if asleep else ("out" if is_out else "awake")
     if is_out:
         return state, ""
 
@@ -575,12 +963,7 @@ def flat_status(f, minutes, is_weekday):
     dinner_mid = (home_mid + 67.5) if home_mid is not None else None
     is_weekend_day = not is_weekday
 
-    # lit is one letter per lit *role*, in the canonical ROOM_NAMES order
-    # (living, kitchen, bedroom, bathroom, hall, other), not the order the
-    # flat's rooms happen to be listed in; a role appears at most once even
-    # if the flat has more than one room of it.
-    roles_present = {r["role"] for r in f["rooms"]}
-    lit = []
+    letters = []
     for role in ROOM_NAMES:
         if role not in roles_present:
             continue
@@ -591,14 +974,16 @@ def flat_status(f, minutes, is_weekday):
             if (home_mid is not None and dinner_mid is not None
                     and _in_range(m, home_mid + 10, dinner_mid + 60)):
                 on = True
-            if f["weekend"] and is_weekend_day and _in_range(m, 12 * 60, 13 * 60):
+            if model["weekend"] and is_weekend_day and _in_range(m, 12 * 60, 13 * 60):
                 on = True
         elif role == "hall":
             if leave_mid is not None and _in_range(m, leave_mid - 5, leave_mid + 2):
                 on = True
             if home_mid is not None and _in_range(m, home_mid - 1, home_mid + 6):
                 on = True
-        elif role in ("living", "other"):
+        elif role in ("living", "front", "back", "sign", "other"):
+            # The three new roles behave as "other" under a rhythm model,
+            # spec 2.4: an outside light that follows the evening.
             if (dinner_mid is not None and bed_mid is not None
                     and _in_range(m, dinner_mid, bed_mid - 10)):
                 on = True
@@ -610,12 +995,12 @@ def flat_status(f, minutes, is_weekday):
         elif role == "bathroom":
             if wake_mid is not None and _in_range(m, wake_mid + 5, wake_mid + 15):
                 on = True
-            if f["nightActivity"] > 0 and asleep and int(round(m)) % 10 == 0:
+            if model["nightActivity"] > 0 and asleep and int(round(m)) % 10 == 0:
                 on = True
         if on:
-            lit.append(ROOM_LETTERS.get(role, ""))
+            letters.append(ROOM_LETTERS[role])
 
-    return state, "".join(lit)
+    return state, "".join(letters)
 
 
 class SceneState:
@@ -634,42 +1019,41 @@ class SceneState:
         self.seed = 1
         self.enabled = True
 
-        # The seeded example town, same ranges and names as the sketch.
-        self.groups = [
-            make_group("Street lights", "street", 0, 15),
-            make_group("Flats", "home", 16, 95),
-            make_group("Shops", "shop", 96, 119),
-            make_group("Pub and grill", "late", 120, 127),
-            make_group("Kiosk, church", "allnight", 128, 143),
-        ]
+        # The nine templates and no units is what a fresh device runs,
+        # spec 2.3; the mock seeds the example town on top, spec 4.5.
+        self.models = [make_model(k) for k in TEMPLATE_KEYS]
 
-        # The seeded example households, spec 4.4: two buildings, five flats,
-        # each with kitchen/living/bedroom/bathroom/hall on lamps 16..40 (also
-        # inside the "Flats" group above, since a flat-owned lamp is only a
-        # /api/scene ownership detail the engine acts on, not the mock).
-        self.flats = [
+        # The seeded example town: the four households from today's fixture,
+        # a shop with front/back/sign rooms, and a street with no building.
+        self.units = [
             # One room with two lamps, so the GUI has a room to show the
             # list form on: the Anderssons light their living room from
             # two fittings.
-            make_flat("Andersson", "Storgatan 3", "family", True, [
+            make_unit("Andersson", "Storgatan 3", "Family", [
                 (16, "kitchen"), ([17, 41], "living"), (18, "bedroom"),
                 (19, "bathroom"), (20, "hall"),
             ]),
-            make_flat("Karlsson", "Storgatan 3", "elderly", True, [
+            make_unit("Karlsson", "Storgatan 3", "Elderly couple", [
                 (21, "kitchen"), (22, "living"), (23, "bedroom"),
                 (24, "bathroom"), (25, "hall"),
             ]),
-            make_flat("Nilsson", "Storgatan 3", "nightowl", True, [
+            make_unit("Nilsson", "Storgatan 3", "Night owl", [
                 (26, "kitchen"), (27, "living"), (28, "bedroom"),
                 (29, "bathroom"), (30, "hall"),
             ]),
-            make_flat("Persson", "Kyrkogatan 1", "family", True, [
+            make_unit("Persson", "Kyrkogatan 1", "Family", [
                 (31, "kitchen"), (32, "living"), (33, "bedroom"),
                 (34, "bathroom"), (35, "hall"),
             ]),
-            make_flat("Svensson", "Kyrkogatan 1", "away", False, [
+            make_unit("Svensson", "Kyrkogatan 1", "Away", [
                 (36, "kitchen"), (37, "living"), (38, "bedroom"),
                 (39, "bathroom"), (40, "hall"),
+            ]),
+            make_unit("Ica Nära", "Storgatan 3", "Shop", [
+                ([96, 97], "front"), (98, "back"), (99, "sign"),
+            ]),
+            make_unit("Main street", "", "Street light", [
+                (list(range(0, 16)), "other"),
             ]),
         ]
 
@@ -710,9 +1094,14 @@ class SceneState:
 
     def total_lamps(self):
         lamps = set()
-        for g in self.groups:
-            lamps |= g["lamps"]
+        for u in self.units:
+            for r in u["rooms"]:
+                for a, b in r["ranges"]:
+                    lamps.update(range(a, b + 1))
         return len(lamps)
+
+    def find_model(self, name):
+        return find_model(self.models, name)
 
     def lit_fraction(self, minutes, dusk, dawn):
         def in_night(m):
@@ -776,8 +1165,8 @@ class SceneState:
                     "dayOfYear": self.dayOfYearOverride,
                 },
                 "seed": self.seed,
-                "groups": [group_to_json(g) for g in self.groups],
-                "flats": [flat_to_json(f) for f in self.flats],
+                "models": [model_to_json(m) for m in self.models],
+                "units": [unit_to_json(u) for u in self.units],
             }
 
     def status_json(self):
@@ -788,13 +1177,16 @@ class SceneState:
         with self.lock:
             # Weekday, spec 3.1: tm_wday derived from the simulated day of
             # year with 2026-01-01 (doy 1) a Thursday; wday 0/6 is the
-            # weekend, used by flat_status() for the "out" state.
+            # weekend, used by unit_status() for the "out" state.
             wday = (self.day_of_year() + 3) % 7
             is_weekday = wday not in (0, 6)
-            flats_status = []
-            for f in self.flats:
-                state, lit = flat_status(f, minutes, is_weekday)
-                flats_status.append({"name": f["name"], "state": state, "lit": lit})
+            units_status = []
+            for u in self.units:
+                mi = self.find_model(u["model"])
+                if mi < 0:
+                    continue
+                state, lit = unit_status(u, self.models[mi], minutes, is_weekday, dusk, dawn)
+                units_status.append({"name": u["name"], "state": state, "lit": lit})
             return {
                 "time": fmt_time(minutes),
                 "minutes": int(round(minutes)),
@@ -810,8 +1202,7 @@ class SceneState:
                 "lit": self.lit_count_at(minutes, dusk, dawn),
                 "active": self.active_count_at(minutes),
                 "lamps": LAMPS.lamp_count(),
-                "groups": len(self.groups),
-                "flats": flats_status,
+                "units": units_status,
             }
 
     def apply_config(self, data):
@@ -859,23 +1250,52 @@ class SceneState:
         if isinstance(data.get("seed"), int):
             new_seed = data["seed"]
 
-        new_groups = self.groups
-        if "groups" in data:
-            groups_in = data["groups"]
-            if not isinstance(groups_in, list):
-                raise ApiError(400, "groups must be an array")
-            if len(groups_in) > SCENE_MAX_GROUPS:
-                raise ApiError(400, "too many groups")
-            new_groups = [group_from_json(o) for o in groups_in]
+        # Models first, then units against whatever models the scene has
+        # now: the ones just read, or the ones it already had. Mirrors
+        # SceneConfig::fromJson()'s two top-level ifs (spec 5, 6).
+        models_in = data.get("models")
+        has_models = isinstance(models_in, list)
+        units_in = data.get("units")
+        has_units = isinstance(units_in, list)
 
-        new_flats = self.flats
-        if "flats" in data:
-            flats_in = data["flats"]
-            if not isinstance(flats_in, list):
-                raise ApiError(400, "flats must be an array")
-            if len(flats_in) > SCENE_MAX_FLATS:
-                raise ApiError(400, "too many flats")
-            new_flats = [flat_from_json(o, i) for i, o in enumerate(flats_in)]
+        new_models = self.models
+        new_units = self.units
+
+        if has_models:
+            was_following = [u["model"] for u in self.units]
+            new_models = []
+            for o in models_in:
+                if len(new_models) >= SCENE_MAX_MODELS:
+                    raise ApiError(400, "too many models")
+                new_models.append(model_from_json(o, new_models))
+
+            if not has_units:
+                # The units that were not sent, against the table just
+                # read: a unit whose model is still there by name follows
+                # it wherever it moved to; a unit whose model went with
+                # this save goes with it.
+                kept = []
+                for u, old_model_name in zip(self.units, was_following):
+                    mi = find_model(new_models, old_model_name)
+                    if mi < 0:
+                        continue
+                    nu = dict(u)
+                    nu["model"] = new_models[mi]["name"]
+                    kept.append(nu)
+                new_units = kept
+
+        if has_units:
+            new_units = []
+            for o in units_in:
+                if len(new_units) >= SCENE_MAX_UNITS:
+                    raise ApiError(400, "too many units")
+                new_units.append(unit_from_json(o, new_models))
+        elif not has_models and ("flats" in data or "groups" in data):
+            # The old shape, spec section 5: no "models" and no "units",
+            # but "flats" or "groups" present.
+            new_models, new_units = migrate_old(data)
+
+        clamp_units(new_units)
 
         manual_time_given = isinstance(clk, dict) and (
             isinstance(clk.get("manualTime"), str) or isinstance(clk.get("manualTime"), int)
@@ -894,8 +1314,8 @@ class SceneState:
             self.dateFromSystem = new_date_from_system
             self.dayOfYearOverride = new_day_of_year
             self.seed = new_seed
-            self.groups = new_groups
-            self.flats = new_flats
+            self.models = new_models
+            self.units = new_units
             if manual_time_given:
                 self._anchor_sim = self._manual_minutes
                 self._anchor_wall = time.time()
@@ -952,41 +1372,13 @@ class SceneState:
                 self.enabled = data["enabled"]
 
     def presets_json(self):
-        out = {}
-        for name in ("street", "home", "shop", "late", "allnight"):
-            p = BEHAVIOUR_PRESETS[name]
-            out[name] = {
-                "onAnchor": p["onAnchor"],
-                "on": list(p["on"]),
-                "offAnchor": p["offAnchor"],
-                "off": list(p["off"]),
-                "litPercent": p["litPercent"],
-                "flickerPercent": p["flickerPercent"],
-                "morning": p["morning"],
-                "level": p["level"],
-                "fadeMs": p["fadeMs"],
-                "dayActivity": p["dayActivity"],
-                "nightActivity": p["nightActivity"],
-            }
-        # Households: setPreset() rhythm fields only, no "custom" entry
-        # (spec 3.5: '"households": {...} (no entry for custom)').
-        out["households"] = {}
-        for name in ("family", "elderly", "nightowl", "away"):
-            p = FLAT_HOUSEHOLD_PRESETS[name]
-            out["households"][name] = {
-                "wake": list(p["wake"]),
-                "leave": list(p["leave"]),
-                "home": list(p["home"]),
-                "bed": list(p["bed"]),
-                "outPercent": p["outPercent"],
-                "tvPercent": p["tvPercent"],
-                "level": p["level"],
-                "fadeMs": p["fadeMs"],
-                "dayActivity": p["dayActivity"],
-                "nightActivity": p["nightActivity"],
-            }
-        out["rooms"] = list(ROOM_NAMES)
-        return out
+        # The nine templates, each a whole model object as the scene
+        # document writes it, keyed by the template's key: what "New
+        # model, start from" offers, spec 2.3 / 6.
+        return {
+            "models": {key: model_to_json(MODEL_TEMPLATES[key]) for key in TEMPLATE_KEYS},
+            "rooms": list(ROOM_NAMES),
+        }
 
 
 def parse_time(s):
