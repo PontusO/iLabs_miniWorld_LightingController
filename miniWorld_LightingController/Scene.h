@@ -78,7 +78,10 @@
     lamp in it gets the same bits, so a ceiling light and two wall lamps are
     one room and not three. Ranges are written the way a person would, as
     single numbers and "a-b" strings, so a street of sixty lamps is one
-    room; the old one-lamp form "lamp": n still loads. A lamp belongs to one
+    room; the old one-lamp form "lamp": n still loads. A run that carries on
+    from the one before it is merged onto it, so [0, "1-3"] is stored, and
+    written back, as ["0-3"]: the eight are eight runs of addresses and not
+    eight ways of writing them. A lamp belongs to one
     unit only and the first unit listing it wins. Model names are resolved
     to indices on load, so renaming a model has to rename it in the units
     that use it in the same save.
@@ -274,7 +277,13 @@ struct SceneConfig {
 class SceneStore {
 public:
     static const char *path() { return "/scene.json"; }
-    static bool load(SceneConfig &cfg);
+    // Is there a stored scene at all? This, and not "the running scene has
+    // no models", is what says a device has never been set up: a stored
+    // scene that will not load must not be written over.
+    static bool exists();
+    // With error, why the stored scene would not load, which the boot log
+    // prints rather than swallowing.
+    static bool load(SceneConfig &cfg, String *error = nullptr);
     static bool save(const SceneConfig &cfg);
     static bool erase();
 };

@@ -23,13 +23,20 @@ SceneEngine Scene;
 // ---------------------------------------------------------------------------
 
 bool SceneEngine::begin() {
-    // Static: a SceneConfig is about 14 kB and the core-0 stack is far
+    // Static: a SceneConfig is about 16 kB and the core-0 stack is far
     // smaller. The sketch is single-threaded and begin() runs once, from
     // setup(), so this never nests with itself.
     static SceneConfig cfg;
-    bool had = SceneStore::load(cfg);
+    String why;
+    bool had = SceneStore::load(cfg, &why);
+    // A stored scene that will not load is worth a line on the console: the
+    // scene comes up empty, the file is left exactly as it is, and without
+    // this nobody would know which of the two had happened.
+    if (!had && SceneStore::exists()) {
+        Serial.printf("scene: %s not loaded: %s\n", SceneStore::path(), why.c_str());
+    }
     // One call rather than a ternary with SceneConfig(): the temporary would
-    // put another 14 kB on the stack. load() leaves cfg at its defaults when
+    // put another 16 kB on the stack. load() leaves cfg at its defaults when
     // there is nothing stored or the file does not parse.
     apply(cfg, false);
     return had;

@@ -968,8 +968,9 @@ static bool migrateGroup(JsonObjectConst o, ModelConfig &M, UnitConfig *U,
     }
 
     // The runs, eight to a room and as many rooms as it takes. A run that
-    // finds every room full is dropped: a group of more than ninety-six
-    // runs was never a room in a building.
+    // finds every room full is not dropped: nothing is lost on the way
+    // across, so a group of more than ninety-six runs, which was never a
+    // room in a building, refuses the whole document instead.
     int start = -1;
     for (int i = 0; i <= LAMPS_MAX_LAMPS; i++) {
         bool on = (i < LAMPS_MAX_LAMPS) && ((bits[i >> 3] >> (i & 7)) & 1);
@@ -979,7 +980,11 @@ static bool migrateGroup(JsonObjectConst o, ModelConfig &M, UnitConfig *U,
             bool placed = U->roomCount > 0 &&
                           U->rooms[U->roomCount - 1].add((uint16_t)start,
                                                          (uint16_t)(i - 1));
-            if (!placed && U->roomCount < UNIT_MAX_ROOMS) {
+            if (!placed) {
+                if (U->roomCount >= UNIT_MAX_ROOMS) {
+                    if (error) *error = "too many rooms in a unit";
+                    return false;
+                }
                 RoomConfig &R = U->rooms[U->roomCount++];
                 R.rangeCount = 0;
                 R.role = Room::Other;
@@ -1037,7 +1042,23 @@ bool SceneConfig::fromJson(const String &in, String *error) {
     if (doc["seed"].is<uint32_t>()) next.seed = doc["seed"];
 
     JsonArrayConst ms = doc["models"];
+    JsonArrayConst us = doc["units"];
+
     if (!ms.isNull()) {
+        // What each unit follows now, by name. A document that rewrites the
+        // models without sending the units leaves them holding indices into
+        // a table that no longer means what it did, so the names are taken
+        // first and the survivors are looked up again below. Static: 24
+        // names is more than belongs on the core-0 stack, and nothing here
+        // nests with itself.
+        static char wasFollowing[SCENE_MAX_UNITS][SCENE_NAME_LEN];
+        for (uint8_t u = 0; u < next.unitCount && u < SCENE_MAX_UNITS; u++) {
+            strlcpy(wasFollowing[u],
+                    next.units[u].model < next.modelCount
+                        ? next.models[next.units[u].model].name : "",
+                    SCENE_NAME_LEN);
+        }
+
         next.modelCount = 0;
         for (JsonObjectConst o : ms) {
             if (next.modelCount >= SCENE_MAX_MODELS) {
@@ -1113,50 +1134,67 @@ bool SceneConfig::fromJson(const String &in, String *error) {
             next.modelCount++;
         }
 
-        // The units, against the models just read. Absent means the units
-        // stay as they are, which is what a document that only edits the
-        // models looks like; clamp() then drops a unit whose model index
-        // has gone. The GUI writes the whole document every time.
-        JsonArrayConst us = doc["units"];
-        if (!us.isNull()) {
-            next.unitCount = 0;
-            for (JsonObjectConst o : us) {
-                if (next.unitCount >= SCENE_MAX_UNITS) {
-                    if (error) *error = "too many units";
-                    return false;
-                }
-                UnitConfig &U = next.units[next.unitCount];
-
-                // By name, which is also what refuses a save that removes a
-                // model some unit still follows.
-                int mi = next.findModel(o["model"] | "");
+        // The units that were not sent, against the table just read. A unit
+        // whose model is still there by name follows it wherever it has
+        // moved to; a unit whose model went with this save goes with it.
+        if (us.isNull()) {
+            uint8_t keep = 0;
+            for (uint8_t u = 0; u < next.unitCount && u < SCENE_MAX_UNITS; u++) {
+                int mi = next.findModel(wasFollowing[u]);
                 if (mi < 0) {
-                    if (error) *error = "unknown model";
+                    continue;
+                }
+                next.units[keep] = next.units[u];
+                next.units[keep].model = (uint8_t)mi;
+                keep++;
+            }
+            next.unitCount = keep;
+        }
+    }
+
+    // The units, against whatever models the scene has now: the ones just
+    // read, or the ones it already had when the document says nothing about
+    // them. Absent means the units stay as they are, as an absent "models"
+    // leaves the models alone.
+    if (!us.isNull()) {
+        next.unitCount = 0;
+        for (JsonObjectConst o : us) {
+            if (next.unitCount >= SCENE_MAX_UNITS) {
+                if (error) *error = "too many units";
+                return false;
+            }
+            UnitConfig &U = next.units[next.unitCount];
+
+            // By name, which is also what refuses a save that removes a
+            // model some unit still follows.
+            int mi = next.findModel(o["model"] | "");
+            if (mi < 0) {
+                if (error) *error = "unknown model";
+                return false;
+            }
+            U.model = (uint8_t)mi;
+            strlcpy(U.name, o["name"] | "", SCENE_NAME_LEN);
+            strlcpy(U.building, o["building"] | "", SCENE_NAME_LEN);
+
+            U.roomCount = 0;
+            JsonArrayConst rs = o["rooms"];
+            for (JsonObjectConst ro : rs) {
+                if (U.roomCount >= UNIT_MAX_ROOMS) {
+                    if (error) *error = "too many rooms in a unit";
                     return false;
                 }
-                U.model = (uint8_t)mi;
-                strlcpy(U.name, o["name"] | "", SCENE_NAME_LEN);
-                strlcpy(U.building, o["building"] | "", SCENE_NAME_LEN);
-
-                U.roomCount = 0;
-                JsonArrayConst rs = o["rooms"];
-                for (JsonObjectConst ro : rs) {
-                    if (U.roomCount >= UNIT_MAX_ROOMS) {
-                        if (error) *error = "too many rooms in a unit";
-                        return false;
-                    }
-                    // A room with no lamps at all is kept here and dropped
-                    // by clamp(), which is also what removes a lamp the
-                    // unit already lists somewhere else.
-                    if (!roomFromJson(ro, U.rooms[U.roomCount], error)) {
-                        return false;
-                    }
-                    U.roomCount++;
+                // A room with no lamps at all is kept here and dropped
+                // by clamp(), which is also what removes a lamp the
+                // unit already lists somewhere else.
+                if (!roomFromJson(ro, U.rooms[U.roomCount], error)) {
+                    return false;
                 }
-                next.unitCount++;
+                U.roomCount++;
             }
+            next.unitCount++;
         }
-    } else if (!doc["flats"].isNull() || !doc["groups"].isNull()) {
+    } else if (ms.isNull() &&
+               (!doc["flats"].isNull() || !doc["groups"].isNull())) {
         // The old shape. Flats first, so their unit indices, and with them
         // their room keys and their household draws, are the ones they had.
         next.modelCount = 0;
@@ -1171,8 +1209,12 @@ bool SceneConfig::fromJson(const String &in, String *error) {
 
         JsonArrayConst fs = doc["flats"];
         for (JsonObjectConst o : fs) {
+            // Nothing is dropped on the way across: a scene that does not
+            // fit is refused whole, so the stored file is still there to be
+            // read by hand, rather than coming back a few households short.
             if (next.unitCount >= SCENE_MAX_UNITS) {
-                break;              // no room left on the layout
+                if (error) *error = "too many units";
+                return false;
             }
             // Static: these are too big for the core-0 stack, and nothing
             // here nests with itself.
@@ -1194,7 +1236,8 @@ bool SceneConfig::fromJson(const String &in, String *error) {
             int mi = onTemplate ? fromTemplate[(uint8_t)t] : -1;
             if (mi < 0) {
                 if (next.modelCount >= SCENE_MAX_MODELS) {
-                    continue;       // no model to point at: the unit goes
+                    if (error) *error = "too many models";
+                    return false;
                 }
                 ModelConfig &M = next.models[next.modelCount];
                 M = onTemplate ? tmplModel : flatModel;
@@ -1214,11 +1257,19 @@ bool SceneConfig::fromJson(const String &in, String *error) {
         JsonArrayConst gs = doc["groups"];
         for (JsonObjectConst o : gs) {
             if (next.modelCount >= SCENE_MAX_MODELS) {
-                break;              // no room left in the model table
+                if (error) *error = "too many models";
+                return false;
             }
             ModelConfig &M = next.models[next.modelCount];
             UnitConfig *U = next.unitCount < SCENE_MAX_UNITS
                                 ? &next.units[next.unitCount] : nullptr;
+            JsonArrayConst gls = o["lamps"];
+            if (!U && !gls.isNull() && gls.size() > 0) {
+                // Lamps with nowhere to go. The model alone would be a
+                // scene missing a street, so the whole document is refused.
+                if (error) *error = "too many units";
+                return false;
+            }
             if (!migrateGroup(o, M, U, error)) {
                 return false;
             }
@@ -1248,17 +1299,28 @@ static bool fsReady() {
     return begun;
 }
 
-bool SceneStore::load(SceneConfig &cfg) {
+bool SceneStore::exists() {
     if (!fsReady()) return false;
+    return LittleFS.exists(path());
+}
+
+bool SceneStore::load(SceneConfig &cfg, String *error) {
+    if (!fsReady()) {
+        if (error) *error = "no filesystem";
+        return false;
+    }
     File f = LittleFS.open(path(), "r");
-    if (!f) return false;
+    if (!f) {
+        if (error) *error = "no stored scene";
+        return false;
+    }
     String body = f.readString();
     f.close();
 
     // Parsed straight into cfg, with no intermediate copy: a SceneConfig is
     // about 16 kB, too much for the stack, and fromJson() only commits on
     // success, so cfg is untouched when the file does not parse.
-    return cfg.fromJson(body);
+    return cfg.fromJson(body, error);
 }
 
 bool SceneStore::save(const SceneConfig &cfg) {

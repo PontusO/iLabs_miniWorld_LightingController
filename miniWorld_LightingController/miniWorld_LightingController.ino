@@ -43,12 +43,14 @@ void setup() {
 
     Scene.begin();              // /scene.json, or an empty scene if there is none
 
-    // Seed the nine models when there is nothing to start from: no stored
-    // scene, or one whose models were never written. No units come with
-    // them, since only the person building the layout knows what is on it,
-    // and a model needs no lamps to exist.
-    bool sceneEmpty = (Scene.config().modelCount == 0);
-    if (sceneEmpty) {
+    // Seed the nine models when there is no stored scene at all, which is a
+    // device that has never been set up. No units come with them, since
+    // only the person building the layout knows what is on it, and a model
+    // needs no lamps to exist. A stored scene that would not load is left
+    // exactly where it is: Scene.begin() has said on the console why the
+    // scene is empty, and seeding over the file would throw away the one
+    // copy of what somebody built.
+    if (!SceneStore::exists()) {
         // Static: a SceneConfig is about 16 kB, too much for the stack.
         static SceneConfig s;
         s.seedTemplates();
