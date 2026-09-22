@@ -275,9 +275,9 @@ Open. Needs a flashed board, no phone or extra hardware.
 4. Watch the Houses view during the scrub: the state word under each
    unit must change along with the scrubber.
 
-### 5.8 Models and units on the board
+### 5.8 Models and units on the board (done 2026-09-22: the stored scene migrated on first boot into four rhythm units at Storgatan 3 plus a Flats unit on lamps 0-15; Andersson, Karlsson and Nilsson scrubbed 05:00 to 23:30 minute by minute on day 265 before and after the flash, state and lit letters identical at all 1111 minutes; the store on the Shop model with a front room on lamps 7 and 8 opened at 08:45 and closed at 18:15; Main street on Street light with lamps 0-15 in one room lit as one at 19:40 with dusk at 19:44, owning nine of the sixteen lamps because two earlier units list the rest; the GUI at 390 px checked against the mock over CDP; the final image reports no loadError and 34 % RAM)
 
-Open. Needs a flashed board, no phone or extra hardware.
+Done. Needs a flashed board, no phone or extra hardware.
 
 1. Mock: `make check` passes; loading the pre-change fixture through the
    migration gives the units and models the design spec's migration
