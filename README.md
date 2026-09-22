@@ -34,22 +34,28 @@ document for the whole project and the place to start reading.
   the sign-in sheet on the WiFi page, where you pick a network and enter
   its password. The same access point serves the full GUI at exhibitions
   with no router.
-- **Web GUI**, one page with five views: Home (town time, dusk and dawn,
+- **Web GUI**, one page with six views: Home (town time, dusk and dawn,
   lit lamps, bus health, network), WiFi (portal page and device
   settings), Lamps (what is fitted on each bus, probe, test), Scene
-  (clock mode, a horizon scrubber for the time of day, the group editor)
-  and Houses (households, their rooms, and the rhythm editor).
-  Dark, phone first, nothing fetched from outside the board.
-- **Scene engine.** Lamps belong to groups with a behaviour: street, home,
-  shop, late, all night. Anything that is a household with rooms is a
-  flat instead, below. Every lamp gets a stable personal habit derived
-  from its index and a seed, so the town looks like the same people living
-  there evening after evening, with a little daily jitter.
-- **Households.** A flat is a named household (Andersson, Storgatan 3)
-  with one daily rhythm and a handful of rooms that light in order:
-  kitchen for the coffee, hall on the way out, living room in the
-  evening, bedroom last. Seen in the Houses tab and as chips on the
-  Home strip.
+  (clock mode, a horizon scrubber for the time of day, location and
+  seed), Models (the ways a building can behave, one editor per kind)
+  and Houses (units, their rooms, and the model each one runs). Dark,
+  phone first, nothing fetched from outside the board.
+- **Models.** A model is a named way of behaving and owns no lamps: a
+  rhythm model is a household's day (wake, leave, home, bed); an hours
+  model is an opening day, on and off anchored to dusk, dawn or the
+  clock. Nine built-in templates (Family, Elderly couple, Night owl,
+  Away, Home, Shop, Pub, Street light, All night) seed a fresh device.
+  Every lamp in a unit on a model gets a stable personal habit derived
+  from its index and a seed, so the town looks like the same people
+  living there evening after evening, with a little daily jitter.
+- **Units.** A unit is a thing on the layout: a name, a building label,
+  the model it runs, and rooms of lamp ranges. The Anderssons at
+  Storgatan 3 are a unit on the Elderly couple model; the shop on the
+  corner and a whole street of lamps are units too, each on an hours
+  model. A rhythm unit's rooms light in order: kitchen for the coffee,
+  hall on the way out, living room in the evening, bedroom last. Seen in
+  the Houses tab and as chips on the Home strip.
 - **JSON API** under `/api/lamps`, `/api/scene`, `/api/net` and
   `/api/system`, with optional HTTP basic auth behind one device password.
   SNTP and mDNS (`miniworld.local`) through the AT firmware.

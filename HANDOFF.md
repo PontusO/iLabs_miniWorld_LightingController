@@ -33,11 +33,11 @@ UART pins are used as an I2C bus.
   ───────────────────────────────────────────────────────────────
   NetManager              WiFi state machine, portal AP, SNTP, mDNS
   DnsResponder            portal DNS, one answer for every name asked
-  HttpServer              parsing, basic auth, routing, SPA from flash (Home, WiFi, Lamps, Scene, Houses)
+  HttpServer              parsing, basic auth, routing, SPA from flash (Home, WiFi, Lamps, Scene, Models, Houses)
   NetWebApi               /api/net/*
   SystemWebApi            /api/system/*
   ───────────────────────────────────────────────────────────────
-  SceneEngine             clock modes, habits, fades, flicker, events (day lights, dips, night wake-ups), flats (households with rooms)
+  SceneEngine             clock modes, habits, fades, flicker, events (day lights, dips, night wake-ups), models (rhythm and hours), units with rooms of lamp ranges
   Scene / Sun             scene data model + JSON, solar calculation
   SceneWebApi             /api/scene/*
   ───────────────────────────────────────────────────────────────
@@ -59,7 +59,7 @@ The rule that made this work: everything above `Lamps` knows nothing
 about I2C, PIO, registers or buses. Everything below `LampDriver` knows
 nothing about lamps, scenes or time. `Lamps.cpp` is the only file that
 knows the pin map and the bus order. The network band names no lamp and
-no group either: `HttpServer` hands a path to whichever web API `owns()`
+no unit either: `HttpServer` hands a path to whichever web API `owns()`
 it, and every web API stays a pure `(method, path, body)` function.
 
 ## 3. File inventory
@@ -75,9 +75,9 @@ it, and every web API stays a pure `(method, path, body)` function.
 | `LampWebApi.h/.cpp` | `/api/lamps/config, status, probe, test` | Per-bus status object done, checked against the mock |
 | `RgbLamps.h` | `setColor(module, r, g, b)` over Lamps | Done |
 | `Sun.h/.cpp` | Sunrise/sunset/civil twilight | **Verified** against Lund almanac |
-| `Scene.h/.cpp` | Groups and their behaviours (street, home, shop, late, allnight, off), flats (households with rooms, several lamps per room), clock, location, JSON | Compiles, reviewed, not yet run on hardware |
-| `SceneEngine.h/.cpp` | The simulation, plus the event layer (day lights, dips, night wake-ups) and `evaluateFlats()` for the flats' rooms, one draw per room so all its lamps switch together | Compiles, reviewed, not yet run on hardware |
-| `SceneWebApi.h/.cpp` | `/api/scene/config, status, clock, identify, presets`; `identify` blinks one lamp, or up to eight of them, so a lamp or a whole room can be found on the layout | Done |
+| `Scene.h/.cpp` | Models (rhythm and hours, up to 16, no lamps of their own) and units (up to 24, a name, a building, a model, rooms of up to 8 lamp ranges), clock, location, seed, JSON | Compiles, reviewed, not yet run on hardware |
+| `SceneEngine.h/.cpp` | The simulation, plus the event layer (day lights, dips, night wake-ups) and `evaluateUnits()` for a unit's rooms: one draw per room for a rhythm unit or a non-individual hours unit, one draw per lamp for an individual hours unit | Compiles, reviewed, not yet run on hardware |
+| `SceneWebApi.h/.cpp` | `/api/scene/config, status, clock, identify, presets`; `status` reports units, not groups or flats; `presets` returns the nine model templates; `identify` blinks one lamp, or up to eight of them, so a lamp or a whole room can be found on the layout | Done |
 | `NetConfig.h/.cpp` | `/net.json`: credentials, hostname, GUI password, NTP, TZ | Compiles, reviewed |
 | `NetDefaults.h` | Compile-time default network for a board with no `/net.json`; gitignored, copy `NetDefaults.example.h` | Done |
 | `NetManager.h/.cpp` | WiFi state machine, portal AP, SNTP, mDNS, global `Net` | Compiles, reviewed, not yet on a phone |
@@ -86,9 +86,13 @@ it, and every web API stays a pure `(method, path, body)` function.
 | `NetWebApi.h/.cpp` | `/api/net/status, scan, config, connect, forget` | Compiles, checked against the mock |
 | `SystemWebApi.h/.cpp` | `/api/system/status, reboot` | Compiles, checked against the mock. The GUI reads `status` for the firmware line on Home; `reboot` has no button and is curl only. |
 | `Version.h` | `MINIWORLD_VERSION`, printed at boot and in the status | Done |
-| `web/` | SPA, five views, built into `WebUI.gen.h` | Done, reviewed at 320 px and 390 px |
-| `web/view-houses.js/.css` | Houses view: households by building, room states, several lamps per room in the group editor's range syntax, the rhythm editor | Compiles, reviewed, not yet run on hardware |
+| `web/` | SPA framework: `index.html`, `app.css`, `app.js`, six views | Done, reviewed at 320 px and 390 px |
+| `web/view-scene.js/.css` | Scene view: clock mode, the horizon scrubber, location, seed | Compiles, reviewed, not yet run on hardware |
+| `web/view-models.js/.css` | Models view: one row per model with its kind and units-in-use count, the rhythm and hours editors, new model from a template, delete refused while a unit uses it | Compiles, reviewed, not yet run on hardware |
+| `web/view-houses.js/.css` | Houses view: units by building, the model selector, rooms in the range syntax, a Model link that opens the model's row | Compiles, reviewed, not yet run on hardware |
+| `web/view-home.js/.css` | Home strip: one chip per unit, the asleep, out, awake, away, open, closed, lit and dark glyphs | Compiles, reviewed, not yet run on hardware |
 | `tools/` | `buildweb.py`, `mockserver.py`, `apicheck.sh` | Done |
+| `tools/test_mockserver.py` | Nine unittest cases for the mock: templates, a model and unit config round trip, the model and range rejections, the flats-then-groups migration, the status shape | Done, run by `make test-mock` |
 | `miniWorld_LightingController.ino` | Application sketch: Net.tick, Http.tick, Scene.tick | Compiles; portal bring-up on a phone still to do, see §5.5 |
 | `i2c.pio`, `pio_i2c.c/.h` | PIO I2C program and primitives, from pico-examples | Vendored, assert removed |
 | `Makefile` (repo root) | arduino-cli wrapper: pioasm, buildweb.py, one explicit `./build` directory for compile and upload, `DEFINES=` passthrough | Done |
@@ -191,7 +195,9 @@ separate `scene.html`: time slider 00:00-23:59 driving
 buttons, day-of-year and speed controls, a dusk/dawn readout from
 `/api/scene/status`, and a group editor (name, behaviour, lamp ranges,
 overrides seeded from `/api/scene/presets`). Served from flash, no
-external resources.
+external resources. The group editor left this view on 2026-09-22, when
+the Models and Units work moved it to the new Models tab and the Houses
+tab; the Scene view now keeps only the clock, the location and the seed.
 
 ### 5.3 Hardware bring-up, in this order
 
@@ -212,8 +218,8 @@ external resources.
   `pio_i2c.c`). Only matters for a device that requires it; SX1503 and
   AL5887 do not.
 - Named scenes: `/scenes/<name>.json` with an active pointer.
-- Group editor drag-to-assign, driven by the manual clock so the user
-  sees which lamp is which.
+- Room lamp-range drag-to-assign on the Houses tab, driven by the manual
+  clock so the user sees which lamp is which.
 
 ### 5.5 Portal bring-up on a phone
 
@@ -244,29 +250,48 @@ that run confirms or refutes.
 
 Open. Needs a flashed board, no phone or extra hardware.
 
-1. Set a group to Home with Night wake-ups at Often, switch the clock to
-   Manual and scrub through 02:00..05:00 in one-minute steps: some lamps
-   of that group must show one to four minute lights that are stable when
-   scrubbing back.
+1. Set a unit on the Home model with Night wake-ups at Often, switch the
+   clock to Manual and scrub through 02:00..05:00 in one-minute steps:
+   some lamps of that unit must show one to four minute lights that are
+   stable when scrubbing back.
 2. Scrub through 07:00..09:00: short lights on the lamps that are off.
 3. Switch to Accelerated at 20 minutes per day and watch Home's lit
    count move outside dusk and dawn.
 
-### 5.7 Flats on the board (done 2026-09-07: five example flats on the board, morning and evening scrubbed minute by minute, order kitchen, living, bedroom, asleep; bathroom at 03:07 for the elderly; re-scrub identical; no reboot)
+### 5.7 Units on the board (done 2026-09-07: five example units on the board, morning and evening scrubbed minute by minute, order kitchen, living, bedroom, asleep; bathroom at 03:07 for the elderly; re-scrub identical; no reboot)
 
 Open. Needs a flashed board, no phone or extra hardware.
 
-1. Create the five example flats (Andersson family, Karlsson elderly,
+1. Create the five example units (Andersson family, Karlsson elderly,
    Nilsson nightowl, Persson family, Svensson away) through the Houses
    view or the API, on lamps the board reports.
 2. Switch to Manual and scrub 05:30..08:30 and 21:00..00:30 in one-minute
-   steps, recording `flats[].state` and `lit`: kitchen before living in
+   steps, recording `units[].state` and `lit`: kitchen before living in
    the evening, bedroom last, `asleep` after bed, bathroom letters
    appearing briefly at night.
 3. Re-scrub the same range and confirm the same result, no reboot in
    between.
 4. Watch the Houses view during the scrub: the state word under each
-   flat must change along with the scrubber.
+   unit must change along with the scrubber.
+
+### 5.8 Models and units on the board
+
+Open. Needs a flashed board, no phone or extra hardware.
+
+1. Mock: `make check` passes; loading the pre-change fixture through the
+   migration gives the units and models the design spec's migration
+   section describes.
+2. Firmware: `make` clean, RAM at or under today's 34 %.
+3. Board: flash, watch the boot load migrate the stored scene, then
+   scrub 05:00 to 23:30 in one-minute steps and compare each unit's
+   `state` and `lit` against a scrub recorded before flashing. They must
+   be identical for the three households on templates.
+4. Board: make "Ica Nära" with the Shop model and lamps 7 and 8, scrub
+   through 08:00 to 09:30 and 17:30 to 19:00, and see it open and close.
+5. Board: make "Main street" with Street light and lamps 0-15 in one
+   room, and see the whole street switch at dusk in one sweep.
+6. GUI at 390 px: the Models table, both editors, the model selector on
+   Houses, and the six-tab nav all fit without horizontal scroll.
 
 ## 6. Things that were not verified and must be
 
@@ -298,9 +323,11 @@ Open. Needs a flashed board, no phone or extra hardware.
   is what makes the 20 kB page arrive in well under a second, but the
   link has never actually run at it here. Watch the boot log for
   `net: esp link 921600` and for garbled AT traffic under load.
-- **RAM with flats.** The four static `SceneConfig` copies are now about
-  8.8 kB each, and RAM use is about 29 percent. Adding a fifth static
-  copy anywhere must be avoided; reuse one of the four instead.
+- **RAM with models and units.** `SceneConfig` is about 16 kB now, and
+  there are five static copies of it. A clean build after the models and
+  units work measured `Sketch uses 234044 bytes (3%)` and `Global
+  variables use 90656 bytes (34%)`. Adding a sixth static copy anywhere
+  must be avoided; reuse one of the five instead.
 - **No civil dusk at 55.7 N around midsummer.** The engine falls back to
   23:00. A clock-anchored off earlier than that wraps, so the lamp reads
   lit for about 22 hours. Pre-existing, now visible because the activity
@@ -324,8 +351,10 @@ Open. Needs a flashed board, no phone or extra hardware.
   edit `WebUI.gen.h`.
 - Config that the GUI edits is applied at runtime and persisted; nothing
   hardware-related is a compile-time switch.
-- Adding a household type or a room role touches the enum, the name
-  table, `setPreset`, the mock's presets and the GUI's lists together.
+- Adding a template or a room role touches the enum, the name table,
+  `setTemplate`, the mock's `MODEL_TEMPLATES` and the GUI's lists
+  together; a room role also touches the three rate tables and the
+  letters.
 
 ## 8. Design decisions worth knowing the reason for
 
@@ -341,9 +370,9 @@ Open. Needs a flashed board, no phone or extra hardware.
 - **Why per-lamp hashed habits.** A random roll every evening makes a
   town look like noise. A stable per-lamp value with a small daily
   jitter makes it look like the same people living there.
-- **Why the engine leaves ungrouped lamps alone.** So the product can
-  drive some lamps by other means (a signal, a switch) without the scene
-  fighting it.
+- **Why the engine leaves lamps outside any unit alone.** So the product
+  can drive some lamps by other means (a signal, a switch) without the
+  scene fighting it.
 - **Why stop-then-start instead of repeated start in PIOWire.** The
   repeated-start path needs the raw FIFO word encoding from
   `pio_i2c.c`, which was not available when the wrapper was written.
@@ -355,19 +384,28 @@ Open. Needs a flashed board, no phone or extra hardware.
   `(seed, lamp, day, slot)` rather than rolled from a running random
   generator. The result is evaluated once per simulated minute into two
   bitmaps, so the 40 Hz tick only tests bits.
-- **Why the household is the unit.** A flat gets one daily rhythm and
-  the rooms are derived from it, not the other way round, because a
-  family does not run four independent lamp schedules, it runs one day.
-  Groups stay for everything that is not a household: a shop, a street,
-  a cluster of lamps with no rooms to speak of. Evening and morning
-  intervals are clipped to daylight so a clock-anchored rhythm does not
-  light a living room at 19:00 in June.
-- **Why there is no "family" group behaviour.** The activity layer came
-  first and gave groups four household presets (family, elderly,
-  nightowl, away); flats then modelled the same households properly, one
-  rhythm per household. Both lived on for a while with the same labels
-  and different numbers. The group presets were retired on 2026-09-22 so
-  a household exists in one place. `parseBehaviour()` and the mock still
-  accept the four names and load them as `home`, so an older
-  `/scene.json` keeps working, and the Scene view lists only the six
-  behaviours that remain.
+- **Why models and units.** Groups and flats had grown into three
+  constructs doing the work of two: a group was a behaviour and a lamp
+  list in one, a flat was a household with a rhythm and rooms, and a
+  household type was a preset for a flat, with nowhere for a shop's
+  hours to live except a household preset it did not fit. A model is now
+  a named way of behaving, in one of two kinds because a household day
+  and an opening-hours day are different simulations, and forcing one
+  shape on both would give a shop a bedtime or take the rooms in order
+  away from a family. A model owns no lamps; a unit is where that
+  behaviour lives on the layout, a name, a building, a model and rooms of
+  lamp ranges, so a street of sixty lamps is one room and groups become
+  redundant. A unit has no override of its model: two shops with
+  different hours are two models, which is one more row in a table
+  rather than a hidden exception. Whether a room's lamps move together
+  or each keeps its own moment, `individual`, lives on the model, because
+  it is a property of the kind of building rather than a question worth
+  asking of every room. A unit refers to its model by name, which is
+  self-describing in the saved JSON at the cost of a rename having to
+  touch the units in the same save. The migration puts flats first so
+  the households keep the unit indices, and therefore the room keys,
+  their draws hang on; only the groups, which never had per-unit draws,
+  get new ones. Building stays a label: nothing yet needs it to be more
+  than a heading on the Houses tab. Groups and household types, and the
+  four retired household group behaviours of 2026-09-22, are gone; a
+  household is a unit on a rhythm model like any other.
