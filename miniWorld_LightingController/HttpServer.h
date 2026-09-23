@@ -20,6 +20,12 @@
         and If-None-Match are kept, everything else is skipped. A header
         line over 512 bytes, or more than 32 of them, gives 431.
       - Body up to 16384 bytes. More gives 413 and the body is not read.
+        The one exception is POST /api/system/firmware, whose body is a
+        firmware image: its Content-Length must fall in FirmwareUpdate's
+        band, and after the routing chain has passed (so a 401 or 413 is
+        answered from the headers alone) the body is streamed in 2 kB
+        pieces into FirmwareUpdate under a 120 s deadline. Scene.tick()
+        does not run for the duration; the lamps hold their levels.
       - Two seconds without a byte at any stage drops the connection, and so
         does a whole request that takes more than five seconds, so a client
         dribbling a byte at a time cannot stall the scene.
@@ -38,8 +44,10 @@
       6. Basic auth when a device password is set. The user part is
          ignored; no password means no check. Failure is 401 with
          WWW-Authenticate: Basic realm="miniWorld".
-      7. /api/lamps/*, /api/scene/*, /api/net/*, /api/system/* to the
-         handler whose owns() matches, answered as application/json.
+      7. /api/system/firmware to FirmwareUpdate (GET as a plain handler,
+         POST streamed), then /api/lamps/*, /api/scene/*, /api/net/*,
+         /api/system/* to the handler whose owns() matches, answered as
+         application/json.
       8. / and /index.html: the gzipped SPA from WebUI.gen.h, with an ETag
          and 304 on a match.
       9. Anything else: 404 JSON.
@@ -71,8 +79,10 @@ public:
 private:
     struct Request {
         String method, path, host, auth, ifNoneMatch, body;
+        String firmwareMd5, firmwareBuild;   // X-Firmware-MD5, X-Firmware-Build
         size_t contentLength = 0;
         bool tooLarge = false, headerTooLong = false, badRequest = false;
+        bool firmwareUpload = false;         // POST to the firmware path: body streamed, not read here
     };
     bool readRequest(WiFiClient &c, Request &r);
     bool readLine(WiFiClient &c, String &line, size_t maxLen);
@@ -83,6 +93,9 @@ private:
     void sendStatus(WiFiClient &c, int code, const char *type, const String &body, const char *extra = nullptr);
     void sendRedirect(WiFiClient &c, const char *location);
     void sendUi(WiFiClient &c, const Request &r);
+    // The one route whose body is not a String: reads it in pieces into
+    // FirmwareUpdate and sends the code end() returns.
+    void streamFirmware(WiFiClient &c, const Request &r);
     WiFiServer _server{80};
 
     // Set by readLine when the line it was reading passed maxLen. The

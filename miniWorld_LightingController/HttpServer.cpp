@@ -10,6 +10,7 @@
 #include "SceneWebApi.h"
 #include "NetWebApi.h"
 #include "SystemWebApi.h"
+#include "FirmwareUpdate.h"
 #include "NetManager.h"
 #include "WebUI.gen.h"
 
@@ -27,6 +28,14 @@ static const uint32_t READ_TIMEOUT_MS  = 2000;   // silence at one stage
 static const uint32_t REQUEST_TIMEOUT_MS = 5000; // the whole request
 static const uint32_t CONN_POLL_MS     = 50;     // connected() is an AT round trip
 static const size_t   UI_CHUNK         = 1024;
+
+// The firmware upload: pieces of this size go straight to
+// AT+CIPRECVDATA, one AT round trip per piece (WiFiEspAT hands a read
+// larger than its own 64-byte buffer to the driver directly), and the
+// whole body may take this long at 115200 with room to spare.
+static const size_t   UPLOAD_CHUNK      = 2048;
+static const uint32_t UPLOAD_TIMEOUT_MS = 120000;
+static uint8_t s_uploadBuf[UPLOAD_CHUNK];
 
 // Three client slots, and the AT firmware drops a connection that goes
 // quiet for this many seconds.
@@ -225,6 +234,7 @@ bool HttpServer::readRequest(WiFiClient &c, Request &r) {
             if (q >= 0) {
                 r.path.remove(q);
             }
+            r.firmwareUpload = (r.method == "POST") && FirmwareUpdate::owns(r.path);
         }
     }
 
@@ -248,11 +258,24 @@ bool HttpServer::readRequest(WiFiClient &c, Request &r) {
         String value;
         if (headerValue(line, "Content-Length", value)) {
             long n = value.toInt();
-            if (n < 0 || (size_t)n > BODY_MAX) {
+            bool inBand;
+            if (r.firmwareUpload) {
+                // The band of a real build, and what the filesystem can
+                // take: a wrong file is refused before it is sent.
+                inBand = n >= (long)FirmwareUpdate::minSize()
+                      && (size_t)n <= FirmwareUpdate::maxSize();
+            } else {
+                inBand = n >= 0 && (size_t)n <= BODY_MAX;
+            }
+            if (!inBand) {
                 r.tooLarge = true;
             } else {
                 r.contentLength = (size_t)n;
             }
+        } else if (headerValue(line, "X-Firmware-MD5", value)) {
+            r.firmwareMd5 = value;
+        } else if (headerValue(line, "X-Firmware-Build", value)) {
+            r.firmwareBuild = value;
         } else if (headerValue(line, "Authorization", value)) {
             r.auth = value;
         } else if (headerValue(line, "Host", value)) {
@@ -266,11 +289,14 @@ bool HttpServer::readRequest(WiFiClient &c, Request &r) {
         }
     }
 
+    if (r.firmwareUpload && r.contentLength == 0) {
+        r.tooLarge = true;                  // no Content-Length, or zero: below the band
+    }
     if (r.badRequest || r.headerTooLong || r.tooLarge) {
         return true;                        // the body is never read
     }
 
-    if (r.contentLength > 0) {
+    if (r.contentLength > 0 && !r.firmwareUpload) {
         r.body.reserve(r.contentLength + 1);
         uint32_t idle = millis() + READ_TIMEOUT_MS;
         uint32_t nextPoll = millis() + CONN_POLL_MS;
@@ -424,6 +450,48 @@ void HttpServer::sendUi(WiFiClient &c, const Request &r) {
     }
 }
 
+// The routing chain has passed: the client is authorised and the length
+// is in the band. Feed the body to FirmwareUpdate and answer with what
+// end() says. A client that goes quiet or away gets no reply, like any
+// other dropped request, and the partial file is removed.
+void HttpServer::streamFirmware(WiFiClient &c, const Request &r) {
+    String out;
+    int code = FirmwareUpdate::begin(r.contentLength, r.firmwareMd5, r.firmwareBuild, out);
+    if (code != 0) {
+        sendStatus(c, code, JSON_TYPE, out);
+        return;
+    }
+    _requestDeadline = millis() + UPLOAD_TIMEOUT_MS;
+    uint32_t idle = millis() + READ_TIMEOUT_MS;
+    uint32_t nextPoll = millis() + CONN_POLL_MS;
+    size_t received = 0;
+    while (received < r.contentLength) {
+        if (!waitReadable(c, idle, nextPoll)) {
+            FirmwareUpdate::abort();
+            return;
+        }
+        size_t want = r.contentLength - received;
+        if (want > UPLOAD_CHUNK) {
+            want = UPLOAD_CHUNK;
+        }
+        int got = c.read(s_uploadBuf, want);
+        if (got <= 0) {
+            if (expired(_requestDeadline)) {
+                FirmwareUpdate::abort();
+                return;
+            }
+            yield();
+            continue;
+        }
+        if (!FirmwareUpdate::write(s_uploadBuf, (size_t)got)) {
+            break;                          // end() answers 500; the rest is not read
+        }
+        received += (size_t)got;
+        idle = millis() + READ_TIMEOUT_MS;
+    }
+    sendStatus(c, FirmwareUpdate::end(out), JSON_TYPE, out);
+}
+
 // ---------------------------------------------------------------------------
 // The request loop
 // ---------------------------------------------------------------------------
@@ -468,7 +536,14 @@ void HttpServer::tick() {
     } else if (r.headerTooLong) {
         sendStatus(c, 431, JSON_TYPE, "{\"error\":\"header too large\"}");
     } else if (r.tooLarge) {
-        sendStatus(c, 413, JSON_TYPE, "{\"error\":\"payload too large\"}");
+        if (r.firmwareUpload) {
+            out = "{\"error\":\"payload too large\",\"max\":";
+            out += (unsigned)FirmwareUpdate::maxSize();
+            out += '}';
+            sendStatus(c, 413, JSON_TYPE, out);
+        } else {
+            sendStatus(c, 413, JSON_TYPE, "{\"error\":\"payload too large\"}");
+        }
     } else if (Net.mode() == NetMode::Portal && r.host != _apHost && r.host.length()) {
         sendRedirect(c, _portalUrl.c_str());
     } else if (isCaptiveProbe(r.path)) {
@@ -478,6 +553,10 @@ void HttpServer::tick() {
     } else if (Net.config().hasPassword() && !authorised(r)) {
         sendStatus(c, 401, JSON_TYPE, "{\"error\":\"unauthorised\"}",
                    "WWW-Authenticate: Basic realm=\"miniWorld\"\r\n");
+    } else if (r.firmwareUpload) {
+        streamFirmware(c, r);
+    } else if (FirmwareUpdate::owns(r.path)) {
+        sendStatus(c, FirmwareUpdate::handle(r.method, r.path, r.body, out), JSON_TYPE, out);
     } else if (LampWebApi::owns(r.path)) {
         sendStatus(c, LampWebApi::handle(r.method, r.path, r.body, out), JSON_TYPE, out);
     } else if (SceneWebApi::owns(r.path)) {
