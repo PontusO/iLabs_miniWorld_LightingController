@@ -70,6 +70,19 @@
         return (n < 10 ? "0" : "") + n;
     }
 
+    // Seconds of uptime as a short readout: days and hours, hours and
+    // minutes, minutes, or seconds, whichever two units matter.
+    function fmtUptime(seconds) {
+        var s = Math.max(0, Math.floor(seconds || 0));
+        var d = Math.floor(s / 86400);
+        var h = Math.floor((s % 86400) / 3600);
+        var m = Math.floor((s % 3600) / 60);
+        if (d > 0) return d + "d " + h + "h";
+        if (h > 0) return h + "h " + m + "m";
+        if (m > 0) return m + "m";
+        return s + "s";
+    }
+
     // "0-15, 20" -> [0,1,...,15,20]. Accepts a comma-separated list of
     // single numbers or "a-b" ranges (a <= b). Throws on anything else,
     // and when max is given, on any number >= max.
@@ -278,6 +291,7 @@
         api: api,
         el: el,
         fmtTime: fmtTime,
+        fmtUptime: fmtUptime,
         parseRanges: parseRanges,
         rangesText: rangesText
     };

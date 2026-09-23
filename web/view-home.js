@@ -122,17 +122,6 @@
 
     // 4512 -> "1h 15m". Days and hours, hours and minutes, minutes, or
     // seconds for the first minute after a reboot.
-    function fmtUptime(seconds) {
-        var s = Math.max(0, Math.floor(seconds || 0));
-        var d = Math.floor(s / 86400);
-        var h = Math.floor((s % 86400) / 3600);
-        var m = Math.floor((s % 3600) / 60);
-        if (d > 0) return d + "d " + h + "h";
-        if (h > 0) return h + "h " + m + "m";
-        if (m > 0) return m + "m";
-        return s + "s";
-    }
-
     // /api/system/status is read once, on mount, and not in poll(): the
     // firmware version never changes while the page is open and the uptime
     // is a readout, not a live counter. On failure the row stays hidden and
@@ -143,7 +132,7 @@
             if (mine !== instance || !r || !s) return;
             var bits = [];
             if (s.firmware) bits.push("firmware " + s.firmware);
-            if (typeof s.uptime === "number") bits.push("up " + fmtUptime(s.uptime));
+            if (typeof s.uptime === "number") bits.push("up " + App.fmtUptime(s.uptime));
             if (bits.length === 0) return;
             setText(r.sys, bits.join(" · "));
             r.sysRow.hidden = false;

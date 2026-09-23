@@ -1,0 +1,41 @@
+/* view-system.css - the System view: three cards, key and value rows,
+   the file row, the progress bar and the one status line.
+
+   Invector Embedded Systems AB */
+
+.view-system [hidden] { display: none !important; }
+.view-system h2 { margin: 0; font-size: 1.05rem; font-weight: 600; }
+.view-system .head {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 8px; margin-bottom: 10px;
+}
+.view-system .row .k { color: var(--muted); }
+.view-system .room { color: var(--muted); margin: 0 0 10px; }
+
+/* The file row: the picker takes the width, Send keeps its size. */
+.view-system .file-row { display: flex; align-items: center; gap: 8px; }
+.view-system .file-row input[type="file"] { flex: 1 1 auto; min-width: 0; color: var(--muted); }
+.view-system .sr {
+    position: absolute; width: 1px; height: 1px; overflow: hidden;
+    clip: rect(0 0 0 0); white-space: nowrap;
+}
+
+/* The bar is only in the page while bytes move. */
+.view-system .bar {
+    height: 6px; margin-top: 12px; border-radius: 3px;
+    background: var(--line); overflow: hidden;
+}
+.view-system .fill { height: 100%; width: 0; background: var(--accent); transition: width 0.2s; }
+
+/* One status line; its class is the phase. */
+.view-system .status { margin: 10px 0 0; color: var(--muted); }
+.view-system .status.sending, .view-system .status.waiting,
+.view-system .status.checking, .view-system .status.rebooting { color: var(--accent); }
+.view-system .status.done { color: var(--ok); }
+.view-system .status.failed { color: #f08a8a; }
+
+.view-system .ask { margin: 0 0 10px; }
+.view-system .btn-row { display: flex; gap: 8px; }
+.view-system .btn.wide { width: 100%; }
+.view-system .btn.danger { background: #a13b3b; border-color: #a13b3b; color: #fff; }
+.view-system .btn:disabled { opacity: 0.5; cursor: default; }
