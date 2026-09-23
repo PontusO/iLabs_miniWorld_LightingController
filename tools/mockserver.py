@@ -17,6 +17,7 @@ Invector Embedded Systems AB
 
 import argparse
 import base64
+import hashlib
 import json
 import math
 import sys
@@ -48,6 +49,18 @@ CAPTIVE_PROBES = (
     "/success.txt",
     "/redirect",
 )
+
+# Firmware upload, spec 2026-09-23-firmware-update-design.md sections 3
+# and 5. The numbers mirror the device: a 1 MB LittleFS with the three
+# JSON documents in it, a 64 kB margin for the filesystem's own needs.
+FIRMWARE_MIN_SIZE = 100000
+FIRMWARE_MAX_SIZE = 1048576
+FIRMWARE_FS_TOTAL = 1048576
+FIRMWARE_FS_USED = 36864
+FIRMWARE_FS_MARGIN = 65536
+FIRMWARE_BANNER = b"miniWorld lighting controller %s (%s)"
+FIRMWARE_SCAN_CHUNK = 4096
+FIRMWARE_SCAN_OVERLAP = 63
 
 # Models and units: spec section 2. SCENE_MAX_MODELS / SCENE_MAX_UNITS /
 # UNIT_MAX_ROOMS / ROOM_MAX_RANGES mirror the firmware #defines; twenty-four
@@ -1567,12 +1580,77 @@ def system_status_json():
     now = time.localtime()
     return {
         "firmware": "0.1.0",
-        "build": "mock",
+        "build": FIRMWARE.build,
         "uptime": int(time.time() - BOOT_TIME),
         "heap": 180000,
         "time": time.strftime("%Y-%m-%dT%H:%M:%S", now),
         "timeValid": True,
     }
+
+
+class FirmwareState:
+    """What the device does with an upload, minus the flash: the band and
+    header checks, an MD5 over the body, the scan for the banner and the
+    build stamp in 4 kB pieces with a 63-byte carry like the firmware's,
+    and on success the reported build becomes the uploaded stamp, which is
+    what tools/ota.sh polls for."""
+
+    def __init__(self):
+        self.build = "mock"
+        self.staged = False
+
+    def free(self):
+        return FIRMWARE_FS_TOTAL - FIRMWARE_FS_USED
+
+    def max_size(self):
+        return min(FIRMWARE_MAX_SIZE, self.free() - FIRMWARE_FS_MARGIN)
+
+    def info_json(self):
+        return {
+            "fsTotal": FIRMWARE_FS_TOTAL,
+            "fsFree": self.free(),
+            "maxSize": self.max_size(),
+            "minSize": FIRMWARE_MIN_SIZE,
+            "staged": self.staged,
+        }
+
+    def check(self, length, md5, build):
+        """The checks the device makes from the headers alone, before it
+        reads a body byte. Raises ApiError; returns None when all is well."""
+        if len(md5) != 32 or any(c not in "0123456789abcdefABCDEF" for c in md5):
+            raise ApiError(400, "missing X-Firmware-MD5")
+        if not build or len(build) > 63:
+            raise ApiError(400, "missing X-Firmware-Build")
+        if length < FIRMWARE_MIN_SIZE or length > self.max_size():
+            raise ApiError(413, "payload too large")
+
+    @staticmethod
+    def _contains(data, needle):
+        carry = b""
+        for off in range(0, len(data), FIRMWARE_SCAN_CHUNK):
+            piece = carry + data[off:off + FIRMWARE_SCAN_CHUNK]
+            if needle in piece:
+                return True
+            carry = piece[-FIRMWARE_SCAN_OVERLAP:]
+        return False
+
+    def upload(self, body, md5, build):
+        self.check(len(body), md5, build)
+        got = hashlib.md5(body).hexdigest()
+        if got != md5.lower():
+            raise ApiError(422, "md5 mismatch")
+        if not self._contains(body, FIRMWARE_BANNER):
+            raise ApiError(422, "not this sketch")
+        if not self._contains(body, build.encode()):
+            raise ApiError(422, "build stamp not in image")
+        self.build = build
+        self.staged = False   # the device reboots and cleans up at boot
+        sys.stderr.write("mock: firmware %d bytes staged, build %s (reboot ignored)\n"
+                         % (len(body), build))
+        return {"ok": True, "size": len(body), "md5": got, "build": build}
+
+
+FIRMWARE = FirmwareState()
 
 
 # ---------------------------------------------------------------------------
@@ -1674,6 +1752,25 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if not self._check_auth():
+            return
+
+        if path == "/api/system/firmware" and method == "POST":
+            # The device answers 400 and 413 from the headers alone, before
+            # the body; the mock has already read the body, which is the one
+            # difference, and it checks in the same order.
+            md5 = (self.headers.get("X-Firmware-MD5") or "").strip()
+            build = (self.headers.get("X-Firmware-Build") or "").strip()
+            length = int(self.headers.get("Content-Length", 0) or 0)
+            try:
+                FIRMWARE.check(length, md5, build)
+                result = FIRMWARE.upload(body_bytes, md5, build)
+            except ApiError as e:
+                payload = {"error": e.message}
+                if e.code == 413:
+                    payload["max"] = FIRMWARE.max_size()
+                self._send_json(payload, e.code)
+                return
+            self._send_json(result, 200)
             return
 
         if path in ("/", "/index.html") and method == "GET":
@@ -1814,6 +1911,11 @@ class Handler(BaseHTTPRequestHandler):
             if method == "POST":
                 self.server.net.forget()
                 return 200, self.server.net.status_json()
+            raise ApiError(405, "method not allowed")
+
+        if path == "/api/system/firmware":
+            if method == "GET":
+                return 200, FIRMWARE.info_json()
             raise ApiError(405, "method not allowed")
 
         if path == "/api/system/status":

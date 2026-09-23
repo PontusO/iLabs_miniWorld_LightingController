@@ -285,3 +285,102 @@ class ClampUnitsTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+import hashlib
+
+
+def _md5(data):
+    return hashlib.md5(data).hexdigest()
+
+
+def _image(stamp, size=120000, banner=True, stamp_at=None):
+    """A synthetic firmware body: filler, the banner format string and the
+    build stamp as C strings. stamp_at places the stamp at a byte offset so
+    a test can straddle the scanner's 4096-byte chunk boundary."""
+    banner_bytes = mockserver.FIRMWARE_BANNER + b"\0" if banner else b""
+    stamp_bytes = stamp.encode() + b"\0" if stamp else b""
+    if stamp_at is None:
+        head = b"\x7f" * 1000
+        body = head + banner_bytes + stamp_bytes
+    else:
+        body = b"\x7f" * stamp_at + stamp_bytes + banner_bytes
+    return body + b"\x7f" * (size - len(body))
+
+
+class FirmwareTest(unittest.TestCase):
+    STAMP = "Sep 23 2026 10:00:00"
+
+    def test_info_shape(self):
+        fw = mockserver.FirmwareState()
+        info = fw.info_json()
+        self.assertEqual(set(info), {"fsTotal", "fsFree", "maxSize", "minSize", "staged"})
+        self.assertEqual(info["minSize"], 100000)
+        self.assertLessEqual(info["maxSize"], info["fsFree"] - 65536)
+        self.assertLessEqual(info["maxSize"], 1048576)
+        self.assertFalse(info["staged"])
+
+    def test_rejects_bad_headers(self):
+        fw = mockserver.FirmwareState()
+        with self.assertRaises(mockserver.ApiError) as cm:
+            fw.check(120000, "nothex", self.STAMP)
+        self.assertEqual(cm.exception.code, 400)
+        with self.assertRaises(mockserver.ApiError) as cm:
+            fw.check(120000, "0" * 32, "")
+        self.assertEqual(cm.exception.code, 400)
+
+    def test_rejects_outside_band(self):
+        fw = mockserver.FirmwareState()
+        for length in (0, 16, 99999, 2000000):
+            with self.assertRaises(mockserver.ApiError) as cm:
+                fw.check(length, "0" * 32, self.STAMP)
+            self.assertEqual(cm.exception.code, 413, length)
+        fw.check(100000, "0" * 32, self.STAMP)   # the lower bound itself passes
+
+    def test_rejects_md5_mismatch(self):
+        fw = mockserver.FirmwareState()
+        body = _image(self.STAMP)
+        with self.assertRaises(mockserver.ApiError) as cm:
+            fw.upload(body, "0" * 32, self.STAMP)
+        self.assertEqual(cm.exception.code, 422)
+        self.assertEqual(cm.exception.message, "md5 mismatch")
+        self.assertEqual(fw.build, "mock")
+        self.assertFalse(fw.staged)
+
+    def test_rejects_foreign_image(self):
+        fw = mockserver.FirmwareState()
+        body = _image(self.STAMP, banner=False)
+        with self.assertRaises(mockserver.ApiError) as cm:
+            fw.upload(body, _md5(body), self.STAMP)
+        self.assertEqual(cm.exception.code, 422)
+        self.assertEqual(cm.exception.message, "not this sketch")
+
+    def test_rejects_missing_stamp(self):
+        fw = mockserver.FirmwareState()
+        body = _image("Sep 01 2026 00:00:00")
+        with self.assertRaises(mockserver.ApiError) as cm:
+            fw.upload(body, _md5(body), self.STAMP)
+        self.assertEqual(cm.exception.code, 422)
+        self.assertEqual(cm.exception.message, "build stamp not in image")
+
+    def test_accepts_and_reports_build(self):
+        fw = mockserver.FirmwareState()
+        body = _image(self.STAMP)
+        result = fw.upload(body, _md5(body), self.STAMP)
+        self.assertEqual(result, {"ok": True, "size": len(body),
+                                  "md5": _md5(body), "build": self.STAMP})
+        self.assertEqual(fw.build, self.STAMP)
+        self.assertFalse(fw.staged)   # the mock "reboots" at once
+
+    def test_accepts_uppercase_md5(self):
+        fw = mockserver.FirmwareState()
+        body = _image(self.STAMP)
+        result = fw.upload(body, _md5(body).upper(), self.STAMP)
+        self.assertEqual(result["md5"], _md5(body))
+
+    def test_finds_stamp_across_chunk_boundary(self):
+        fw = mockserver.FirmwareState()
+        # The stamp starts 5 bytes before the first 4096-byte boundary.
+        body = _image(self.STAMP, stamp_at=4096 - 5)
+        result = fw.upload(body, _md5(body), self.STAMP)
+        self.assertEqual(result["build"], self.STAMP)
