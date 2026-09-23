@@ -15,6 +15,7 @@ Invector Embedded Systems AB
 
 import hashlib
 import sys
+import time
 import unittest
 from pathlib import Path
 
@@ -378,6 +379,27 @@ class FirmwareTest(unittest.TestCase):
         body = _image(self.STAMP, stamp_at=4096 - 5)
         result = fw.upload(body, _md5(body), self.STAMP)
         self.assertEqual(result["build"], self.STAMP)
+
+    def test_status_reports_the_new_build_after_the_reboot_delay(self):
+        fw = mockserver.FirmwareState()
+        body = _image(self.STAMP)
+        fw.upload(body, _md5(body), self.STAMP)
+        # The mock "reboots" for FIRMWARE_REBOOT_S: the status keeps the old
+        # build until then, so a page that waits for the stamp has
+        # something to wait for.
+        self.assertEqual(fw.reported_build(fw.build_at - 0.1), "mock")
+        self.assertEqual(fw.reported_build(fw.build_at), self.STAMP)
+        self.assertGreaterEqual(fw.build_at - time.time(), mockserver.FIRMWARE_REBOOT_S - 1)
+
+    def test_reboot_resets_the_uptime(self):
+        was = mockserver.BOOT_TIME
+        try:
+            mockserver.BOOT_TIME = time.time() - 500
+            self.assertGreaterEqual(mockserver.system_status_json()["uptime"], 499)
+            mockserver.mock_reboot()
+            self.assertLessEqual(mockserver.system_status_json()["uptime"], 1)
+        finally:
+            mockserver.BOOT_TIME = was
 
 
 if __name__ == "__main__":

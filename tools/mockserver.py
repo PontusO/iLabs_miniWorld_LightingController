@@ -61,6 +61,7 @@ FIRMWARE_FS_MARGIN = 65536
 FIRMWARE_BANNER = b"miniWorld lighting controller %s (%s)"
 FIRMWARE_SCAN_CHUNK = 4096
 FIRMWARE_SCAN_OVERLAP = 63
+FIRMWARE_REBOOT_S = 3   # the status keeps the old build this long after an upload
 
 # Models and units: spec section 2. SCENE_MAX_MODELS / SCENE_MAX_UNITS /
 # UNIT_MAX_ROOMS / ROOM_MAX_RANGES mirror the firmware #defines; twenty-four
@@ -1580,12 +1581,19 @@ def system_status_json():
     now = time.localtime()
     return {
         "firmware": "0.1.0",
-        "build": FIRMWARE.build,
+        "build": FIRMWARE.reported_build(),
         "uptime": int(time.time() - BOOT_TIME),
         "heap": 180000,
         "time": time.strftime("%Y-%m-%dT%H:%M:%S", now),
         "timeValid": True,
     }
+
+
+def mock_reboot():
+    """What the reboot route does here: the uptime starts again, so a
+    page that waits for a smaller uptime sees one at once."""
+    global BOOT_TIME
+    BOOT_TIME = time.time()
 
 
 class FirmwareState:
@@ -1603,6 +1611,8 @@ class FirmwareState:
 
     def __init__(self):
         self.build = "mock"
+        self.previous = "mock"
+        self.build_at = 0.0
         self.staged = False
 
     def free(self):
@@ -1619,6 +1629,14 @@ class FirmwareState:
             "minSize": FIRMWARE_MIN_SIZE,
             "staged": self.staged,
         }
+
+    def reported_build(self, now=None):
+        """The build /api/system/status shows: the previous one until
+        build_at, then the uploaded one. The device is rebooting in that
+        gap, and a page that waits for the new stamp must see the gap."""
+        if now is None:
+            now = time.time()
+        return self.build if now >= self.build_at else self.previous
 
     def check(self, length, md5, build):
         """The checks the device makes from the headers alone, before it
@@ -1651,7 +1669,9 @@ class FirmwareState:
             raise ApiError(422, "not this sketch")
         if not self._contains(body, build.encode()):
             raise ApiError(422, "build stamp not in image")
+        self.previous = self.reported_build()
         self.build = build
+        self.build_at = time.time() + FIRMWARE_REBOOT_S
         self.staged = False   # the device reboots and cleans up at boot
         sys.stderr.write("mock: firmware %d bytes staged, build %s (reboot ignored)\n"
                          % (len(body), build))
@@ -1933,7 +1953,8 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/system/reboot":
             if method == "POST":
-                sys.stderr.write("mock: reboot requested (ignored)\n")
+                mock_reboot()
+                sys.stderr.write("mock: reboot requested, uptime reset\n")
                 return 200, {"ok": True}
             raise ApiError(405, "method not allowed")
 
