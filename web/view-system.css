@@ -32,10 +32,10 @@
 .view-system .status.sending, .view-system .status.waiting,
 .view-system .status.checking, .view-system .status.rebooting { color: var(--accent); }
 .view-system .status.done { color: var(--ok); }
-.view-system .status.failed { color: #f08a8a; }
+.view-system .status.failed { color: var(--fault); }
 
 .view-system .ask { margin: 0 0 10px; }
 .view-system .btn-row { display: flex; gap: 8px; }
 .view-system .btn.wide { width: 100%; }
-.view-system .btn.danger { background: #a13b3b; border-color: #a13b3b; color: #fff; }
+.view-system .btn.danger { background: var(--fault); border-color: var(--fault); color: #fff; }
 .view-system .btn:disabled { opacity: 0.5; cursor: default; }

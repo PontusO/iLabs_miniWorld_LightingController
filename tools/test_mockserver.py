@@ -390,6 +390,15 @@ class FirmwareTest(unittest.TestCase):
         self.assertEqual(fw.reported_build(fw.build_at - 0.1), "mock")
         self.assertEqual(fw.reported_build(fw.build_at), self.STAMP)
         self.assertGreaterEqual(fw.build_at - time.time(), mockserver.FIRMWARE_REBOOT_S - 1)
+        # And the status route reads through it: swap the module's state in.
+        was = mockserver.FIRMWARE
+        try:
+            mockserver.FIRMWARE = fw
+            self.assertEqual(mockserver.system_status_json()["build"], "mock")
+            fw.build_at = time.time() - 1
+            self.assertEqual(mockserver.system_status_json()["build"], self.STAMP)
+        finally:
+            mockserver.FIRMWARE = was
 
     def test_reboot_resets_the_uptime(self):
         was = mockserver.BOOT_TIME

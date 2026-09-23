@@ -85,7 +85,7 @@ it, and every web API stays a pure `(method, path, body)` function.
 | `DnsResponder.h/.cpp` | Portal DNS on port 53, one A record for any name | Compiles, reviewed, not yet on a phone |
 | `HttpServer.h/.cpp` | Parsing, basic auth, routing, the SPA from flash, and the one streamed body: the firmware upload | Compiles, reviewed |
 | `NetWebApi.h/.cpp` | `/api/net/status, scan, config, connect, forget` | Compiles, checked against the mock |
-| `SystemWebApi.h/.cpp` | `/api/system/status, reboot`; `firmware` is FirmwareUpdate's | Compiles, checked against the mock. The GUI reads `status` for the firmware line on Home; `reboot` has no button and is curl only. |
+| `SystemWebApi.h/.cpp` | `/api/system/status, reboot`; `firmware` is FirmwareUpdate's | Compiles, checked against the mock. The GUI reads `status` for the firmware line on Home and the Device card on System; `reboot` is the System tab's Reboot button. |
 | `FirmwareUpdate.h/.cpp` | `/api/system/firmware`: GET reports filesystem headroom; POST is streamed by HttpServer into `firmware.bin`, MD5 and the banner and build stamp checked, then PicoOTA's command page and a reboot | Done, verified on the board 2026-09-23, see §5.9 |
 | `Version.h` | `MINIWORLD_VERSION`, printed at boot and in the status | Done |
 | `web/` | SPA framework: `index.html`, `app.css`, `app.js`, seven views | Done, reviewed at 320 px and 390 px |
@@ -95,7 +95,7 @@ it, and every web API stays a pure `(method, path, body)` function.
 | `web/view-home.js/.css` | Home strip: one chip per unit, the asleep, out, awake, away, open, closed, lit and dark glyphs | Compiles, reviewed, not yet run on hardware |
 | `web/view-system.js/.css` | System view: the device line, filesystem headroom, the firmware upload with the browser-side band, banner, stamp and MD5 checks, the wait for the new build, a reboot button | Done, verified on the board 2026-09-23, see §5.10 |
 | `tools/` | `buildweb.py`, `mockserver.py`, `apicheck.sh`, `ota.sh` | Done |
-| `tools/test_mockserver.py` | Twenty-five unittest tests in eight classes for the mock: templates, a model and unit config round trip, the model and range rejections, the flats-then-groups migration, the status shape, the firmware upload checks | Done, run by `make test-mock` |
+| `tools/test_mockserver.py` | Twenty-seven unittest tests in eight classes for the mock: templates, a model and unit config round trip, the model and range rejections, the flats-then-groups migration, the status shape, the firmware upload checks, the delayed build and the reboot uptime reset | Done, run by `make test-mock` |
 | `miniWorld_LightingController.ino` | Application sketch: Net.tick, Http.tick, Scene.tick | Compiles; portal bring-up on a phone still to do, see §5.5 |
 | `i2c.pio`, `pio_i2c.c/.h` | PIO I2C program and primitives, from pico-examples | Vendored, assert removed |
 | `Makefile` (repo root) | arduino-cli wrapper: pioasm, buildweb.py, one explicit `./build` directory for compile and upload, `DEFINES=` passthrough, `make ota` | Done |
@@ -347,7 +347,7 @@ the MD5 (RFC 1321 written out in `view-system.js`, since browsers offer
 no MD5) before a byte is sent, streams the file with an XMLHttpRequest
 so the bar moves, then polls the status for the new stamp. A lost reply
 goes to the same wait rather than to a failure. The mock lags an upload
-by 3 s and resets its uptime on reboot so both waits run off-target.
+by 3 s and resets its uptime on reboot so both waits run off-target. The page's identity check rests on the image carrying exactly one stamp-shaped string; a library that embeds its own `__DATE__ __TIME__` would make the page refuse every image while `ota.sh`, which reads the stamp from `BuildStamp.gen.h`, keeps working, and the Makefile stamps in the C locale so the month is always three ASCII letters.
 
 ## 6. Things that were not verified and must be
 

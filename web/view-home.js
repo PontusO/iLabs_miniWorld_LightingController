@@ -120,8 +120,6 @@
         showSystem();
     }
 
-    // 4512 -> "1h 15m". Days and hours, hours and minutes, minutes, or
-    // seconds for the first minute after a reboot.
     // /api/system/status is read once, on mount, and not in poll(): the
     // firmware version never changes while the page is open and the uptime
     // is a readout, not a live counter. On failure the row stays hidden and

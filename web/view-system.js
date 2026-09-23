@@ -130,6 +130,7 @@
             up.total = 0;
         }
         renderUpload();
+        renderReboot();
     }
 
     function renderUpload() {
@@ -137,11 +138,11 @@
         r.send.disabled = busy() || !s.file;
         r.file.disabled = busy();
         r.bar.hidden = up.phase !== "sending";
-        r.fill.style.width = up.total ? Math.round(100 * up.sent / up.total) + "%" : "0%";
+        var pct = up.total ? Math.round(100 * up.sent / up.total) : 0;
+        r.fill.style.width = pct + "%";
+        r.bar.setAttribute("aria-valuenow", String(pct));
         r.msg.textContent = up.msg;
         r.msg.className = "status " + up.phase;
-        r.msg.hidden = !up.msg;
-        renderReboot();
     }
 
     // Polls the status until test(status) is true or maxMs have passed.
@@ -183,6 +184,7 @@
     function send() {
         var file = s.file;
         if (!file || busy()) return;
+        s.confirm = false;              // a stale "Reboot?" beside a running upload helps nobody
         setPhase("checking", "checking " + file.name);
         var reader = new FileReader();
         reader.onerror = function () {
@@ -195,7 +197,7 @@
                 setPhase("failed", image.err);
                 return;
             }
-            setPhase("sending", "sending " + kb(image.size));
+            setPhase("sending", "sending build " + image.stamp + ", " + kb(image.size));
             post(buf, image);
         };
         reader.readAsArrayBuffer(file);
@@ -216,7 +218,7 @@
             if (!ev.lengthComputable) return;
             up.sent = ev.loaded;
             up.total = ev.total;
-            up.msg = "sending " + kb(ev.loaded) + " of " + kb(ev.total);
+            up.msg = "sending build " + image.stamp + ", " + kb(ev.loaded) + " of " + kb(ev.total);
             renderUpload();
         };
         xhr.onload = function () { answered(xhr, image); };
@@ -242,7 +244,9 @@
             location.reload();          // the browser's own login prompt, as App.api does
             return;
         }
-        if (xhr.status === 413) {
+        if (xhr.status === 409) {
+            setPhase("failed", "the board is busy with another upload; try again in a minute");
+        } else if (xhr.status === 413) {
             setPhase("failed", "the board takes images up to " + body.max +
                 " bytes; this one is " + image.size);
         } else if (xhr.status === 422) {
@@ -264,6 +268,7 @@
             function () {
                 setPhase("failed", "the board did not come back on the new build; " +
                     "if it stays unreachable, flash over USB with make upload");
+                loadInfo();
             });
     }
 
@@ -280,17 +285,19 @@
         }
         r.rbody.appendChild(el("p", { class: "ask" }, "Reboot the controller?"));
         r.rbody.appendChild(el("div", { class: "btn-row" },
-            el("button", { class: "btn danger", type: "button", onclick: reboot }, "Yes, reboot"),
+            el("button", { class: "btn danger", type: "button", disabled: busy(),
+                onclick: reboot }, "Yes, reboot"),
             el("button", { class: "btn secondary", type: "button",
                 onclick: function () { s.confirm = false; renderReboot(); } }, "Not now")));
     }
 
     function reboot() {
+        if (busy()) return;
         var before = s.status && typeof s.status.uptime === "number" ? s.status.uptime : Infinity;
         var t0 = Date.now();
         s.confirm = false;
         setPhase("rebooting", "rebooting");
-        api("POST", "/api/system/reboot").then(function () {
+        function waitBack() {
             waitFor(function (st) { return typeof st.uptime === "number" && st.uptime < before; },
                 REBOOT_MAX_MS,
                 function () {
@@ -300,8 +307,17 @@
                 function () {
                     setPhase("failed", "the board did not answer within 60 s; check it over USB");
                 });
-        }).catch(function (e) {
-            setPhase("failed", (e && e.message) || "reboot request failed");
+        }
+        api("POST", "/api/system/reboot").then(waitBack, function (e) {
+            // App.api rejects with a TypeError when no answer came at all;
+            // the board may already be rebooting, so wait for it the same
+            // way. Any real answer that was not 2xx is a failure to show.
+            if (!(e instanceof TypeError)) {
+                setPhase("failed", (e && e.message) || "reboot request failed");
+                return;
+            }
+            setPhase("rebooting", "no reply from the board; it may be rebooting");
+            waitBack();
         });
     }
 
@@ -352,9 +368,11 @@
             disabled: true }, "Send");
         r.fill = el("div", { class: "fill" });
         r.bar = el("div", { class: "bar", role: "progressbar", "aria-label": "upload",
+            "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": "0",
             hidden: true }, r.fill);
-        r.msg = el("p", { class: "status idle", role: "status", "aria-live": "polite",
-            hidden: true });
+        // Always in the page, empty when there is nothing to say: a live
+        // region that appears from hidden is not announced by every reader.
+        r.msg = el("p", { class: "status idle", role: "status", "aria-live": "polite" });
         r.rbody = el("div", {});
 
         return el("section", { class: "view-system" },
@@ -376,6 +394,7 @@
         r = {};
         root.appendChild(build());
         renderUpload();
+        renderReboot();
         api("GET", "/api/system/status").then(function (st) {
             s.status = st;
             renderDevice();
@@ -388,6 +407,7 @@
     // with the body, so the routine poll stands down.
     function poll() {
         if (busy()) return;
+        if (!s.info) loadInfo();        // the mount-time read may have failed
         api("GET", "/api/system/status").then(function (st) {
             s.status = st;
             renderDevice();
