@@ -13,6 +13,7 @@ seeded fixture's mutations. Run with:
 Invector Embedded Systems AB
 """
 
+import hashlib
 import sys
 import unittest
 from pathlib import Path
@@ -283,13 +284,6 @@ class ClampUnitsTest(unittest.TestCase):
         self.assertEqual(units[0]["rooms"][1]["ranges"], [(4, 5)])
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
-import hashlib
-
-
 def _md5(data):
     return hashlib.md5(data).hexdigest()
 
@@ -384,3 +378,7 @@ class FirmwareTest(unittest.TestCase):
         body = _image(self.STAMP, stamp_at=4096 - 5)
         result = fw.upload(body, _md5(body), self.STAMP)
         self.assertEqual(result["build"], self.STAMP)
+
+
+if __name__ == "__main__":
+    unittest.main()
