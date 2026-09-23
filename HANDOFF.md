@@ -36,6 +36,7 @@ UART pins are used as an I2C bus.
   HttpServer              parsing, basic auth, routing, SPA from flash (Home, WiFi, Lamps, Scene, Models, Houses)
   NetWebApi               /api/net/*
   SystemWebApi            /api/system/*
+  FirmwareUpdate          /api/system/firmware: an image into LittleFS, verified, then the core's OTA boot stage
   ───────────────────────────────────────────────────────────────
   SceneEngine             clock modes, habits, fades, flicker, events (day lights, dips, night wake-ups), models (rhythm and hours), units with rooms of lamp ranges
   Scene / Sun             scene data model + JSON, solar calculation
@@ -82,21 +83,22 @@ it, and every web API stays a pure `(method, path, body)` function.
 | `NetDefaults.h` | Compile-time default network for a board with no `/net.json`; gitignored, copy `NetDefaults.example.h` | Done |
 | `NetManager.h/.cpp` | WiFi state machine, portal AP, SNTP, mDNS, global `Net` | Compiles, reviewed, not yet on a phone |
 | `DnsResponder.h/.cpp` | Portal DNS on port 53, one A record for any name | Compiles, reviewed, not yet on a phone |
-| `HttpServer.h/.cpp` | Parsing, basic auth, routing, the SPA from flash | Compiles, reviewed |
+| `HttpServer.h/.cpp` | Parsing, basic auth, routing, the SPA from flash, and the one streamed body: the firmware upload | Compiles, reviewed |
 | `NetWebApi.h/.cpp` | `/api/net/status, scan, config, connect, forget` | Compiles, checked against the mock |
-| `SystemWebApi.h/.cpp` | `/api/system/status, reboot` | Compiles, checked against the mock. The GUI reads `status` for the firmware line on Home; `reboot` has no button and is curl only. |
+| `SystemWebApi.h/.cpp` | `/api/system/status, reboot`; `firmware` is FirmwareUpdate's | Compiles, checked against the mock. The GUI reads `status` for the firmware line on Home; `reboot` has no button and is curl only. |
+| `FirmwareUpdate.h/.cpp` | `/api/system/firmware`: GET reports filesystem headroom; POST is streamed by HttpServer into `firmware.bin`, MD5 and the banner and build stamp checked, then PicoOTA's command page and a reboot | Done, verified on the board 2026-09-23, see §5.9 |
 | `Version.h` | `MINIWORLD_VERSION`, printed at boot and in the status | Done |
 | `web/` | SPA framework: `index.html`, `app.css`, `app.js`, six views | Done, reviewed at 320 px and 390 px |
 | `web/view-scene.js/.css` | Scene view: clock mode, the horizon scrubber, location, seed | Compiles, reviewed, not yet run on hardware |
 | `web/view-models.js/.css` | Models view: one row per model with its kind and units-in-use count, the rhythm and hours editors, new model from a template, delete refused while a unit uses it | Compiles, reviewed, not yet run on hardware |
 | `web/view-houses.js/.css` | Houses view: units by building, the model selector, rooms in the range syntax, a Model link that opens the model's row | Compiles, reviewed, not yet run on hardware |
 | `web/view-home.js/.css` | Home strip: one chip per unit, the asleep, out, awake, away, open, closed, lit and dark glyphs | Compiles, reviewed, not yet run on hardware |
-| `tools/` | `buildweb.py`, `mockserver.py`, `apicheck.sh` | Done |
-| `tools/test_mockserver.py` | Nine unittest cases for the mock: templates, a model and unit config round trip, the model and range rejections, the flats-then-groups migration, the status shape | Done, run by `make test-mock` |
+| `tools/` | `buildweb.py`, `mockserver.py`, `apicheck.sh`, `ota.sh` | Done |
+| `tools/test_mockserver.py` | Twenty-five unittest tests in eight classes for the mock: templates, a model and unit config round trip, the model and range rejections, the flats-then-groups migration, the status shape, the firmware upload checks | Done, run by `make test-mock` |
 | `miniWorld_LightingController.ino` | Application sketch: Net.tick, Http.tick, Scene.tick | Compiles; portal bring-up on a phone still to do, see §5.5 |
 | `i2c.pio`, `pio_i2c.c/.h` | PIO I2C program and primitives, from pico-examples | Vendored, assert removed |
-| `Makefile` (repo root) | arduino-cli wrapper: pioasm, buildweb.py, one explicit `./build` directory for compile and upload, `DEFINES=` passthrough | Done |
-| `tools/flash.sh`, `checkimage.sh`, `findboard.sh`, `console.sh` | Guarded flashing: image freshness, identity and size check; board found by USB id; banner verified after flashing | Done, findboard and checkimage exercised; flash end to end pending the bench |
+| `Makefile` (repo root) | arduino-cli wrapper: pioasm, buildweb.py, one explicit `./build` directory for compile and upload, `DEFINES=` passthrough, `make ota` | Done |
+| `tools/flash.sh`, `checkimage.sh`, `findboard.sh`, `console.sh`, `ota.sh` | Guarded flashing: image freshness, identity and size check; board found by USB id; banner verified after flashing; `ota.sh`: the air path with the same checks | Done, findboard and checkimage exercised; flash end to end pending the bench |
 | `lamp-hardware-brief.md` | PCB design brief for carrier and AL5887 board | Needs the 4+6 connector patch, see §5 |
 
 `i2c.pio`, `pio_i2c.c` and `pio_i2c.h` are copied from
@@ -295,6 +297,45 @@ Done. Needs a flashed board, no phone or extra hardware.
 6. GUI at 390 px: the Models table, both editors, the model selector on
    Houses, and the six-tab nav all fit without horizontal scroll.
 
+### 5.9 Firmware over the air (done 2026-09-23: the 253 kB image in 8 to 9 s at 921600; a re-send of the running image and a real change both verified through the API; six negative cases refused as planned; USB recovered afterwards)
+
+Spec: `docs/superpowers/specs/2026-09-23-firmware-update-design.md`. The
+push model: `make ota HOST=<address>` runs `checkimage.sh`, POSTs the
+`.bin` with its MD5 and build stamp in two headers, and polls the status
+for the stamp. The device stores the image in LittleFS, checks the MD5,
+scans the bytes for the banner and the stamp, writes the OTA command
+through the core's PicoOTA and reboots; the arduino-pico boot stage in
+every image does the copy. The scene freezes for the upload; there is no
+rollback, USB recovers a bad image. GUI upload page: a later round.
+
+Measured on the Challenger at 192.168.1.180. The image is 258964 bytes
+(253 kB), and its build verified through the API over USB before and
+after the air tests. The boot log shows `net: esp link 921600`. A fresh
+USB flash reports 1032192 bytes free of 1048576, and the first air
+update leaves 1028096 free. The re-send of the running image sent
+258964 bytes in 9 s, the device answered 200 and the status carried the
+same stamp 19 s after the start; the console showed `firmware: upload of
+258964 bytes`, the banner with the same stamp and `firmware: removed
+staged image` at boot, and the tool reports success because it compares
+the stamp. A real change with a new stamp from the recompile took 8 s to
+upload and verified 15 s after the start; the console showed
+`firmware: staged 258964 bytes, build ..., rebooting into it`, the new
+banner and `firmware: removed staged image`. The reboot and copy of the
+253 kB image took about 9 s from the 200 to the status answering with
+the new stamp, and covers the ESP bring-up and DHCP. The six negative
+cases: a wrong MD5 gave 422 md5 mismatch with the image not staged; a
+chunked POST with no Content-Length gave 413 at once; a foreign
+200000-byte file gave 422 not this sketch; a Content-Length of 2000000
+gave 413 before any transfer; a truncated upload left the console saying
+`firmware: upload dropped` with the image not staged, and a following
+upload succeeded; an upper-case MD5 gave 200 and a reboot into the same
+image. One open observation: the `make ota` issued immediately after the
+truncated upload once got no answer on the POST (curl code 000) although
+a GET a second earlier worked; two deliberate attempts to reproduce it
+both saw the next POST accepted at once, 4 to 5 s after the drop, and
+`tools/ota.sh` does not retry. USB afterwards: `make upload` verified
+through the API.
+
 ## 6. Things that were not verified and must be
 
 - **AL5887 register map.** Everything part-specific is in the define
@@ -325,12 +366,18 @@ Done. Needs a flashed board, no phone or extra hardware.
   is what makes the 20 kB page arrive in well under a second, but the
   link has never actually run at it here. Watch the boot log for
   `net: esp link 921600` and for garbled AT traffic under load.
+- **The OTA boot stage.** Every image links the core's `ota.o`, and
+  before 2026-09-23 it had never been exercised on this board. It is now:
+  the copy of a 253 kB image and the reboot took about 9 s on the bench.
+  What is still unobserved is power loss during the copy, which the
+  stage's own design says restarts the copy at the next boot.
 - **RAM with models and units.** `SceneConfig` is 12080 bytes with
   sixteen models and twenty-four units, about 12 kB, and there are five
   static copies of it. A clean build at HEAD, GUI included, measured
-  `Sketch uses 234604 bytes (3%)` and `Global variables use 90720 bytes
-  (34%)`. Adding a sixth static copy anywhere must be avoided; reuse one
-  of the five instead.
+  `Sketch uses 241412 bytes (3%)` and `Global variables use 97192 bytes
+  (37%)`. FirmwareUpdate adds a 4 kB scan buffer and HttpServer a 2 kB
+  receive buffer, both static. Adding a sixth static copy anywhere must
+  be avoided; reuse one of the five instead.
 - **No civil dusk at 55.7 N around midsummer.** The engine falls back to
   23:00. A clock-anchored off earlier than that wraps, so the lamp reads
   lit for about 22 hours. Pre-existing, now visible because the activity
@@ -412,3 +459,12 @@ Done. Needs a flashed board, no phone or extra hardware.
   than a heading on the Houses tab. Groups and household types, and the
   four retired household group behaviours of 2026-09-22, are gone; a
   household is a unit on a rhythm model like any other.
+- **Why the firmware goes over the air as a plain .bin and not gzip.**
+  gzip takes the image from 248 kB to 180 kB, a few seconds on the UART,
+  but hides the banner and stamp strings from the device's identity
+  check and makes the MD5 cover the archive rather than the bytes that
+  reach flash. The check is worth more than the seconds. And why not the
+  core's `Update` class: it commits the OTA command inside `end()` with
+  no room for that check, so `FirmwareUpdate` writes the file itself and
+  uses `MD5Builder` and `PicoOTA` directly, which is all `Update` does on
+  RP2040 apart from a buffer.
