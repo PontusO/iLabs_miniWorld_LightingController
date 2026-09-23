@@ -68,7 +68,7 @@ BUILD_FLAGS := --build-path $(BUILD_PATH) \
 
 export ARDUINO_CLI FQBN
 
-.PHONY: all compile upload ota erase-net console pio web mock check test-mock clean check-tools
+.PHONY: all compile upload ota check-host erase-net console pio web mock check test-mock clean check-tools
 
 all: compile
 
@@ -108,9 +108,11 @@ upload: compile
 # The air path. OTA_PASSWORD in the environment when the device has a
 # GUI password. The same checkimage guard runs first, and the same
 # build-stamp test runs afterwards through the API.
-ota: compile
-	@test -n "$(HOST)" || { echo "make ota needs HOST=<ip or miniworld.local>"; exit 1; }
+ota: check-host compile
 	tools/ota.sh $(BUILD_PATH) "$(HOST)"
+
+check-host:
+	@test -n "$(HOST)" || { echo "make ota needs HOST=<ip or miniworld.local>"; exit 1; }
 
 # A one-shot build that erases /net.json at boot, in its own directory so
 # it never masquerades as the normal image. The marker check proves the

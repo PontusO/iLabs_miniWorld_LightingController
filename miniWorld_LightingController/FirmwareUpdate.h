@@ -12,7 +12,7 @@
                                   the body), X-Firmware-Build (the image's
                                   MINIWORLD_BUILD string)
         200 {"ok":true,"size":N,"md5":"..","build":".."}  staged; reboot follows
-        400 missing X-Firmware-MD5 | missing X-Firmware-Build
+        400 missing X-Firmware-MD5 | missing X-Firmware-Build | X-Firmware-Build longer than 63 characters
         409 upload in progress
         413 payload too large (Content-Length outside the band; the server
             answers this from the headers, begin() repeats it as a guard)

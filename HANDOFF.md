@@ -98,7 +98,7 @@ it, and every web API stays a pure `(method, path, body)` function.
 | `miniWorld_LightingController.ino` | Application sketch: Net.tick, Http.tick, Scene.tick | Compiles; portal bring-up on a phone still to do, see §5.5 |
 | `i2c.pio`, `pio_i2c.c/.h` | PIO I2C program and primitives, from pico-examples | Vendored, assert removed |
 | `Makefile` (repo root) | arduino-cli wrapper: pioasm, buildweb.py, one explicit `./build` directory for compile and upload, `DEFINES=` passthrough, `make ota` | Done |
-| `tools/flash.sh`, `checkimage.sh`, `findboard.sh`, `console.sh`, `ota.sh` | Guarded flashing: image freshness, identity and size check; board found by USB id; banner verified after flashing; `ota.sh`: the air path with the same checks | Done, findboard and checkimage exercised; flash end to end pending the bench |
+| `tools/flash.sh`, `checkimage.sh`, `findboard.sh`, `console.sh`, `ota.sh` | Guarded flashing: image freshness, identity and size check; board found by USB id; banner verified after flashing; `ota.sh`: the air path with the same checks | Done, exercised end to end on the bench 2026-09-23: USB flash verified through the API before and after the air tests |
 | `lamp-hardware-brief.md` | PCB design brief for carrier and AL5887 board | Needs the 4+6 connector patch, see §5 |
 
 `i2c.pio`, `pio_i2c.c` and `pio_i2c.h` are copied from
@@ -326,7 +326,7 @@ the new stamp, and covers the ESP bring-up and DHCP. The six negative
 cases: a wrong MD5 gave 422 md5 mismatch with the image not staged; a
 chunked POST with no Content-Length gave 413 at once; a foreign
 200000-byte file gave 422 not this sketch; a Content-Length of 2000000
-gave 413 before any transfer; a truncated upload left the console saying
+gave 413 before any transfer; a truncated upload (curl -m 2) left the console saying
 `firmware: upload dropped` with the image not staged, and a following
 upload succeeded; an upper-case MD5 gave 200 and a reboot into the same
 image. One open observation: the `make ota` issued immediately after the

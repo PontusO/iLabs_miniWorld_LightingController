@@ -163,8 +163,11 @@ int FirmwareUpdate::begin(size_t length, const String &md5, const String &build,
     if (!isHex32(md5)) {
         return reply(400, "missing X-Firmware-MD5", body);
     }
-    if (build.length() == 0 || build.length() >= BUILD_MAX) {
+    if (build.length() == 0) {
         return reply(400, "missing X-Firmware-Build", body);
+    }
+    if (build.length() >= BUILD_MAX) {
+        return reply(400, "X-Firmware-Build longer than 63 characters", body);
     }
     size_t max = maxSize();
     if (length < MIN_SIZE || length > max) {
@@ -202,8 +205,16 @@ bool FirmwareUpdate::write(const uint8_t *data, size_t len) {
         s_writeFailed = true;
         return false;
     }
-    s_md5.add(data, (uint16_t)len);     // pieces are 2 kB, well inside uint16_t
     s_received += len;
+    // MD5Builder::add() takes a uint16_t length. The pieces are 2 kB
+    // today, but the interface takes size_t, so feed it in steps that
+    // always fit instead of trusting the caller.
+    while (len > 0) {
+        size_t step = len > 0xFFFF ? 0xFFFF : len;
+        s_md5.add(data, (uint16_t)step);
+        data += step;
+        len  -= step;
+    }
     return true;
 }
 
@@ -250,6 +261,10 @@ int FirmwareUpdate::end(String &body) {
     picoOTA.begin();
     if (!picoOTA.addFile(IMAGE_FILE) || !picoOTA.commit()) {
         discard();
+        // commit() opens the command file for writing before it fails,
+        // so a partial page may be left; the boot stage's CRC would
+        // refuse it, but it has no business staying in the filesystem.
+        LittleFS.remove(_OTA_COMMAND_FILE);
         Serial.println("firmware: rejected, commit failed");
         return reply(500, "commit failed", body);
     }

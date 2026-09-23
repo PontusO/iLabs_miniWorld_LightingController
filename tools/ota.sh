@@ -30,11 +30,14 @@ bin="$dir/miniWorld_LightingController.ino.bin"
 
 fail() { echo "ota: $*" >&2; exit 1; }
 
-# curl with the device password when one is set; the password never
-# appears on a command line of this script's own.
+# curl with the device password when one is set. It goes in through a
+# config on stdin (curl -K -), so it is never on any command line, not
+# even curl's; a double quote or backslash in it is escaped for curl's
+# config syntax. stdin is free: the image goes in as @file.
 curl_auth() {
     if [ -n "${OTA_PASSWORD:-}" ]; then
-        curl -u ":$OTA_PASSWORD" "$@"
+        printf 'user = ":%s"\n' "$(printf '%s' "$OTA_PASSWORD" | sed 's/[\\"]/\\&/g')" \
+            | curl -K - "$@"
     else
         curl "$@"
     fi
@@ -54,33 +57,66 @@ pre=$(curl_auth -s -m 8 "http://$host/api/system/firmware") \
     || fail "no answer from http://$host/api/system/firmware"
 max=$(printf '%s' "$pre" | json_field maxSize)
 free=$(printf '%s' "$pre" | json_field fsFree)
+case "$pre" in *unauthori[sz]ed*) fail "device answered 401: set OTA_PASSWORD to the GUI password";; esac
 [ -n "$max" ] || fail "unexpected answer from the device: $pre"
 [ "$size" -le "$max" ] || fail "image is $size bytes, the device takes at most $max ($free bytes free)"
 echo "ota: sending $size bytes, build $stamp, to $host ($free bytes free)"
 
 # Expect: is emptied because the device does not answer 100-continue and
 # curl would otherwise wait a second before sending the body.
-resp=$(curl_auth -s -m 180 -w '\n%{http_code}' -X POST --data-binary "@$bin" \
-    -H 'Content-Type: application/octet-stream' \
-    -H "X-Firmware-MD5: $md5" -H "X-Firmware-Build: $stamp" -H 'Expect:' \
-    "http://$host/api/system/firmware")
+post_image() {
+    curl_auth -s -m 180 -w '\n%{http_code}' -X POST --data-binary "@$bin" \
+        -H 'Content-Type: application/octet-stream' \
+        -H "X-Firmware-MD5: $md5" -H "X-Firmware-Build: $stamp" -H 'Expect:' \
+        "http://$host/api/system/firmware"
+}
+
+# status_is <stamp> <seconds>: polls /api/system/status until its build
+# equals the stamp or the time is up. Returns 0 on a match, with the
+# last build seen in $build.
+status_is() {
+    end=$(( $(date +%s) + $2 ))
+    build=""
+    while [ "$(date +%s)" -lt "$end" ]; do
+        build=$(curl_auth -s -m 5 "http://$host/api/system/status" | json_field build)
+        [ "$build" = "$1" ] && return 0
+        sleep 2
+    done
+    return 1
+}
+
+resp=$(post_image)
 code=$(printf '%s\n' "$resp" | tail -1)
 body=$(printf '%s\n' "$resp" | sed '$d')
-[ "$code" = "200" ] || fail "device answered $code: $body"
-echo "ota: device staged the image: $body"
-
-# The reboot, the copy (a 248 kB image is about a second) and the ESP
-# bring-up. The stamp is the test, not a before/after difference, so
-# re-sending the running image passes too.
-end=$(( $(date +%s) + 90 ))
-build=""
-sleep 3
-while [ "$(date +%s)" -lt "$end" ]; do
-    build=$(curl_auth -s -m 5 "http://$host/api/system/status" | json_field build)
-    if [ "$build" = "$stamp" ]; then
+if [ -z "$code" ] || [ "$code" = "000" ]; then
+    # No answer at all. Once on the bench the POST right after a dropped
+    # upload got none although the board was fine, and a lost reply can
+    # also mean the 200 itself was lost while the board reboots. So look
+    # for the stamp first, and only then send the image once more; a
+    # second body into a board that is mid-reboot helps nobody.
+    echo "ota: no answer from the device, checking whether it took the image"
+    if status_is "$stamp" 30; then
         echo "ota: verified, board at $host runs build $build"
         exit 0
     fi
-    sleep 2
-done
+    echo "ota: sending once more"
+    resp=$(post_image)
+    code=$(printf '%s\n' "$resp" | tail -1)
+    body=$(printf '%s\n' "$resp" | sed '$d')
+    if [ -z "$code" ] || [ "$code" = "000" ]; then
+        fail "no answer from the device at $host on two attempts; if it stays unreachable, recover over USB with make upload"
+    fi
+fi
+[ "$code" != "401" ] || fail "device answered 401: set OTA_PASSWORD to the GUI password"
+[ "$code" = "200" ] || fail "device answered $code: $body"
+echo "ota: device staged the image: $body"
+
+# The reboot, the copy (a 253 kB image is about a second) and the ESP
+# bring-up. The stamp is the test, not a before/after difference, so
+# re-sending the running image passes too.
+sleep 3
+if status_is "$stamp" 90; then
+    echo "ota: verified, board at $host runs build $build"
+    exit 0
+fi
 fail "board at $host did not report build '$stamp' within 90 s (last seen '${build:-nothing}'); if it stays unreachable, recover over USB with make upload"

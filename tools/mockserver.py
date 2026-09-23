@@ -1593,7 +1593,13 @@ class FirmwareState:
     header checks, an MD5 over the body, the scan for the banner and the
     build stamp in 4 kB pieces with a 63-byte carry like the firmware's,
     and on success the reported build becomes the uploaded stamp, which is
-    what tools/ota.sh polls for."""
+    what tools/ota.sh polls for.
+
+    The device decides the 413 in its header parser, before basic auth,
+    and then the MD5 and build headers; check() keeps that order. One
+    difference stays: the mock's auth check runs before this class sees
+    the request, so an unauthorised oversize POST gets 401 here and 413
+    on the device."""
 
     def __init__(self):
         self.build = "mock"
@@ -1617,12 +1623,14 @@ class FirmwareState:
     def check(self, length, md5, build):
         """The checks the device makes from the headers alone, before it
         reads a body byte. Raises ApiError; returns None when all is well."""
-        if len(md5) != 32 or any(c not in "0123456789abcdefABCDEF" for c in md5):
-            raise ApiError(400, "missing X-Firmware-MD5")
-        if not build or len(build) > 63:
-            raise ApiError(400, "missing X-Firmware-Build")
         if length < FIRMWARE_MIN_SIZE or length > self.max_size():
             raise ApiError(413, "payload too large")
+        if len(md5) != 32 or any(c not in "0123456789abcdefABCDEF" for c in md5):
+            raise ApiError(400, "missing X-Firmware-MD5")
+        if not build:
+            raise ApiError(400, "missing X-Firmware-Build")
+        if len(build) > 63:
+            raise ApiError(400, "X-Firmware-Build longer than 63 characters")
 
     @staticmethod
     def _contains(data, needle):

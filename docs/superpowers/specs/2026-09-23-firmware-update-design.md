@@ -248,8 +248,9 @@ A 2 kB static receive buffer in `HttpServer`, a 4 kB static scan buffer
 in `FirmwareUpdate` (could share; kept separate for clarity, both are
 far below the 12 kB `SceneConfig` the RAM rule watches), an `MD5Builder`
 and a `File`. No new static `SceneConfig`, no heap in the steady state.
-The `PicoOTA` page is allocated for the commit and freed with the
-object. The build figures go into HANDOFF as with every round.
+The `PicoOTA` page is allocated by `begin()` and kept by the global
+object until the next `begin()`; after a good commit the board reboots,
+and after a failed one the 656 bytes stay allocated, which is harmless. The build figures go into HANDOFF as with every round.
 
 ## 6. Tooling
 

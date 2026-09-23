@@ -16,9 +16,10 @@
 
       - Request line: method, path, the ?query stripped and ignored. Over
         1024 bytes gives 431, a line that is not a request line gives 400.
-      - Headers until the blank line. Content-Length, Authorization, Host
-        and If-None-Match are kept, everything else is skipped. A header
-        line over 512 bytes, or more than 32 of them, gives 431.
+      - Headers until the blank line. Content-Length, Authorization,
+        Host, If-None-Match, X-Firmware-MD5 and X-Firmware-Build are kept,
+        everything else is skipped. A header line over 512 bytes, or more
+        than 32 of them, gives 431.
       - Body up to 16384 bytes. More gives 413 and the body is not read.
         The one exception is POST /api/system/firmware, whose body is a
         firmware image: its Content-Length must fall in FirmwareUpdate's
