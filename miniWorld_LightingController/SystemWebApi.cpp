@@ -70,3 +70,7 @@ int SystemWebApi::handle(const String &method, const String &path,
 bool SystemWebApi::rebootPending() {
     return reboot_pending;
 }
+
+void SystemWebApi::requestReboot() {
+    reboot_pending = true;
+}

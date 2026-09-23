@@ -7,6 +7,9 @@
                                  heap, system time, time validity
       POST /api/system/reboot    trigger a system reboot (does not reboot
                                  immediately; the flag is read by the caller)
+      GET  /api/system/firmware  filesystem headroom for an upload
+      POST /api/system/firmware  a firmware image over the air; both are
+                                 handled by FirmwareUpdate, see its header
 
     Status object:
 
@@ -30,6 +33,10 @@ public:
     // Set by handle() when a reboot was requested; the server reboots
     // after the response has been sent.
     static bool rebootPending();
+
+    // Sets the same flag from outside a handler; FirmwareUpdate uses it
+    // after staging an image so the 200 goes out before the reboot.
+    static void requestReboot();
 
 private:
     static int getStatus(String &body);

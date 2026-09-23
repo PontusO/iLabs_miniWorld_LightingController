@@ -32,11 +32,13 @@
 #include "NetConfig.h"
 #include "NetManager.h"
 #include "HttpServer.h"
+#include "FirmwareUpdate.h"
 
 void setup() {
     Serial.begin(115200);
     delay(1500);                // give USB CDC a moment so the boot log is visible
     Serial.printf("miniWorld lighting controller %s (%s)\n", MINIWORLD_VERSION, MINIWORLD_BUILD);
+    FirmwareUpdate::cleanupAtBoot();   // the image just copied in, or a half upload
 
     Lamps.begin();              // applies whatever the GUI last saved
     Serial.printf("lamps: %u devices, %u lamps\n", Lamps.deviceCount(), Lamps.count());
