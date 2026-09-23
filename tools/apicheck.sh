@@ -83,6 +83,25 @@ check GET  /api/net/scan      200
 check GET  /api/net/config    200
 check PUT  /api/net/config    200 '{"ntp":"pool.ntp.org"}'
 check GET  /api/system/status 200
+check GET  /api/system/firmware 200
+# A body far below the band is refused from the headers alone, before
+# any byte of it is stored, so the streaming route is proven without a
+# real image and without changing anything on a device.
+if [ -n "$AUTH" ]; then
+    code=$(curl -s -o /dev/null -w "%{http_code}" -u "$AUTH" -X POST \
+        -H "Content-Type: application/octet-stream" \
+        -H "X-Firmware-MD5: 00000000000000000000000000000000" \
+        -H "X-Firmware-Build: none" --data-binary "not a firmware" \
+        "$BASE/api/system/firmware")
+else
+    code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+        -H "Content-Type: application/octet-stream" \
+        -H "X-Firmware-MD5: 00000000000000000000000000000000" \
+        -H "X-Firmware-Build: none" --data-binary "not a firmware" \
+        "$BASE/api/system/firmware")
+fi
+printf "%s %s %s\n" "$code" POST /api/system/firmware
+[ "$code" = "413" ] || FAIL=1
 if [ "${APICHECK_DESTRUCTIVE:-0}" = "1" ]; then
   check POST /api/system/reboot 200
 else
