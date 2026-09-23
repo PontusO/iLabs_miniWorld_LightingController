@@ -9,6 +9,8 @@
 #   make              compile into ./build
 #   make upload       compile, check the image, find the board by USB
 #                     identity, flash, verify the boot banner
+#   make ota HOST=x   compile, check the image, send it over WiFi to the
+#                     board at HOST, verify the build stamp through the API
 #   make erase-net    same, with a build that forgets the stored WiFi
 #                     network at boot (flash a normal build afterwards)
 #   make console      read the board's USB console
@@ -44,6 +46,7 @@ BOARD       := rp2040:rp2040:challenger_nb_2040_wifi
 FLASH       := 8388608_1048576
 FQBN        := $(BOARD):flash=$(FLASH)
 PORT        ?=
+HOST        ?=
 
 ARDUINO_CLI ?= $(firstword $(wildcard $(HOME)/bin/arduino-cli) $(shell command -v arduino-cli 2>/dev/null))
 PIOASM      ?= $(lastword $(sort $(wildcard $(HOME)/.arduino15/packages/rp2040/tools/pqt-pioasm/*/pioasm)))
@@ -65,7 +68,7 @@ BUILD_FLAGS := --build-path $(BUILD_PATH) \
 
 export ARDUINO_CLI FQBN
 
-.PHONY: all compile upload erase-net console pio web mock check test-mock clean check-tools
+.PHONY: all compile upload ota erase-net console pio web mock check test-mock clean check-tools
 
 all: compile
 
@@ -101,6 +104,13 @@ compile: pio web
 
 upload: compile
 	tools/flash.sh $(BUILD_PATH) "$(PORT)" "$(MARKER)"
+
+# The air path. OTA_PASSWORD in the environment when the device has a
+# GUI password. The same checkimage guard runs first, and the same
+# build-stamp test runs afterwards through the API.
+ota: compile
+	@test -n "$(HOST)" || { echo "make ota needs HOST=<ip or miniworld.local>"; exit 1; }
+	tools/ota.sh $(BUILD_PATH) "$(HOST)"
 
 # A one-shot build that erases /net.json at boot, in its own directory so
 # it never masquerades as the normal image. The marker check proves the
