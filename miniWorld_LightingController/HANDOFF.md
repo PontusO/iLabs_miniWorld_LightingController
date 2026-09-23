@@ -88,11 +88,12 @@ it, and every web API stays a pure `(method, path, body)` function.
 | `SystemWebApi.h/.cpp` | `/api/system/status, reboot`; `firmware` is FirmwareUpdate's | Compiles, checked against the mock. The GUI reads `status` for the firmware line on Home; `reboot` has no button and is curl only. |
 | `FirmwareUpdate.h/.cpp` | `/api/system/firmware`: GET reports filesystem headroom; POST is streamed by HttpServer into `firmware.bin`, MD5 and the banner and build stamp checked, then PicoOTA's command page and a reboot | Done, verified on the board 2026-09-23, see §5.9 |
 | `Version.h` | `MINIWORLD_VERSION`, printed at boot and in the status | Done |
-| `web/` | SPA framework: `index.html`, `app.css`, `app.js`, six views | Done, reviewed at 320 px and 390 px |
+| `web/` | SPA framework: `index.html`, `app.css`, `app.js`, seven views | Done, reviewed at 320 px and 390 px |
 | `web/view-scene.js/.css` | Scene view: clock mode, the horizon scrubber, location, seed | Compiles, reviewed, not yet run on hardware |
 | `web/view-models.js/.css` | Models view: one row per model with its kind and units-in-use count, the rhythm and hours editors, new model from a template, delete refused while a unit uses it | Compiles, reviewed, not yet run on hardware |
 | `web/view-houses.js/.css` | Houses view: units by building, the model selector, rooms in the range syntax, a Model link that opens the model's row | Compiles, reviewed, not yet run on hardware |
 | `web/view-home.js/.css` | Home strip: one chip per unit, the asleep, out, awake, away, open, closed, lit and dark glyphs | Compiles, reviewed, not yet run on hardware |
+| `web/view-system.js/.css` | System view: the device line, filesystem headroom, the firmware upload with the browser-side band, banner, stamp and MD5 checks, the wait for the new build, a reboot button | Done, verified on the board 2026-09-23, see §5.10 |
 | `tools/` | `buildweb.py`, `mockserver.py`, `apicheck.sh`, `ota.sh` | Done |
 | `tools/test_mockserver.py` | Twenty-five unittest tests in eight classes for the mock: templates, a model and unit config round trip, the model and range rejections, the flats-then-groups migration, the status shape, the firmware upload checks | Done, run by `make test-mock` |
 | `miniWorld_LightingController.ino` | Application sketch: Net.tick, Http.tick, Scene.tick | Compiles; portal bring-up on a phone still to do, see §5.5 |
@@ -306,7 +307,7 @@ for the stamp. The device stores the image in LittleFS, checks the MD5,
 scans the bytes for the banner and the stamp, writes the OTA command
 through the core's PicoOTA and reboots; the arduino-pico boot stage in
 every image does the copy. The scene freezes for the upload; there is no
-rollback, USB recovers a bad image. GUI upload page: a later round.
+rollback, USB recovers a bad image. GUI upload page: §5.10.
 
 Measured on the Challenger at 192.168.1.180. The image is 258964 bytes
 (253 kB), and its build verified through the API over USB before and
@@ -336,6 +337,17 @@ both saw the next POST accepted at once, 4 to 5 s after the drop;
 `tools/ota.sh` now polls for the stamp for 30 s and sends once more
 when the POST gets no answer. USB afterwards: `make upload` verified
 through the API.
+
+### 5.10 Firmware upload from the GUI (done 2026-09-23: an update sent from the System tab, back on the new build 20.5 s after Send with the bar moving for 6 s; the Reboot button back after 7 s)
+
+Spec: `docs/superpowers/specs/2026-09-23-firmware-gui-design.md`. A
+System tab does in the browser what `tools/ota.sh` does on the host: it
+checks the band, the banner string, exactly one stamp-shaped string and
+the MD5 (RFC 1321 written out in `view-system.js`, since browsers offer
+no MD5) before a byte is sent, streams the file with an XMLHttpRequest
+so the bar moves, then polls the status for the new stamp. A lost reply
+goes to the same wait rather than to a failure. The mock lags an upload
+by 3 s and resets its uptime on reboot so both waits run off-target.
 
 ## 6. Things that were not verified and must be
 
