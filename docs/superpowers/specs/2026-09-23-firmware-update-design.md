@@ -256,7 +256,8 @@ and after a failed one the 656 bytes stay allocated, which is harmless. The buil
 
 ### 6.1 `make ota HOST=<address>`
 
-New target, `ota: compile` then `tools/ota.sh $(BUILD_PATH) "$(HOST)"`.
+New target, `ota: check-host compile`: the HOST check first, so a
+forgotten `HOST=` costs no build, then `tools/ota.sh $(BUILD_PATH) "$(HOST)"`.
 The script:
 
 1. Runs `tools/checkimage.sh` on the build directory, so a stale,

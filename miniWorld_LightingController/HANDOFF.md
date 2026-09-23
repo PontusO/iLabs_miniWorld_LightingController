@@ -332,8 +332,9 @@ upload succeeded; an upper-case MD5 gave 200 and a reboot into the same
 image. One open observation: the `make ota` issued immediately after the
 truncated upload once got no answer on the POST (curl code 000) although
 a GET a second earlier worked; two deliberate attempts to reproduce it
-both saw the next POST accepted at once, 4 to 5 s after the drop, and
-`tools/ota.sh` does not retry. USB afterwards: `make upload` verified
+both saw the next POST accepted at once, 4 to 5 s after the drop;
+`tools/ota.sh` now polls for the stamp for 30 s and sends once more
+when the POST gets no answer. USB afterwards: `make upload` verified
 through the API.
 
 ## 6. Things that were not verified and must be
