@@ -699,7 +699,7 @@ if ((("Sep 23 2026 17:09:03 and Sep 24 2026 08:00:00").match(re) || []).length !
 console.log(bad.length ? "MD5/STAMP FAIL: " + JSON.stringify(bad) : "md5 and stamp ok");
 '
 make web 2>&1 | grep -i "webui:"
-grep -c "—" web/view-system.js web/view-system.css web/app.js web/view-home.js web/index.html
+grep -c $'\xe2\x80\x94' web/view-system.js web/view-system.css web/app.js web/view-home.js web/index.html
 ```
 
 Expected: `syntax ok`; `md5 and stamp ok`; `webui: ... bytes gzipped` at most 40960 and about 4 kB above 29927; every em dash count 0.
@@ -839,7 +839,7 @@ Fill the angle brackets with the measured facts; no placeholder remains.
 
 ```bash
 cp HANDOFF.md miniWorld_LightingController/HANDOFF.md
-diff -q HANDOFF.md miniWorld_LightingController/HANDOFF.md && grep -c "—" HANDOFF.md
+diff -q HANDOFF.md miniWorld_LightingController/HANDOFF.md && grep -c $'\xe2\x80\x94' HANDOFF.md
 ```
 
 Expected: no diff output, and `0`.
