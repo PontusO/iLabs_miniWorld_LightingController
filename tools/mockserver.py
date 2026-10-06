@@ -1294,6 +1294,7 @@ class SceneState:
                 "sunrise": fmt_time(sunrise),
                 "mode": self.mode,
                 "dayMinutes": self.dayMinutes,
+                "dateFromSystem": self.dateFromSystem,
                 "clockValid": True,
                 "enabled": self.enabled,
                 "lit": self.lit_count_at(minutes, dusk, dawn),
@@ -1476,6 +1477,14 @@ class SceneState:
                     raise ApiError(400, "dayOfYear must be 1..366")
                 self.dayOfYearOverride = d
                 self.dateFromSystem = False
+
+            # After dayOfYear, so a body with both ends on the switch.
+            # Turning it off keeps the day the scene is on, as
+            # SceneEngine::setDateFromSystem() does.
+            if isinstance(data.get("dateFromSystem"), bool):
+                if not data["dateFromSystem"]:
+                    self.dayOfYearOverride = self.day_of_year()
+                self.dateFromSystem = data["dateFromSystem"]
 
             if isinstance(data.get("enabled"), bool):
                 self.enabled = data["enabled"]

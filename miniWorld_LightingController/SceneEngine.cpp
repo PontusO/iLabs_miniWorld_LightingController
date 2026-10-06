@@ -142,6 +142,18 @@ void SceneEngine::setDayOfYear(uint16_t doy) {
     _unitDoy = -1;
 }
 
+void SceneEngine::setDateFromSystem(bool on) {
+    if (!on && _cfg.dateFromSystem) {
+        // Stay on the day the scene is on rather than jump back to
+        // whatever day was typed in last.
+        _cfg.dayOfYear = _doy;
+    }
+    _cfg.dateFromSystem = on;
+    _sunForDoy = -1;
+    // Where the weekday comes from changes, as in setDayOfYear().
+    _unitDoy = -1;
+}
+
 // Difference between local time and UTC as the system sees it. Relies on
 // the product having set TZ (e.g. "CET-1CEST,M3.5.0,M10.5.0/3") and on
 // the clock having been set from NTP.

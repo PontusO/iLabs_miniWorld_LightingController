@@ -120,6 +120,7 @@ public:
     void setManualTime(uint16_t minutes);
     void setDayMinutes(uint16_t minutes);
     void setDayOfYear(uint16_t doy);        // also turns off dateFromSystem
+    void setDateFromSystem(bool on);        // off keeps the day it is on
 
     // What the simulation thinks right now
     uint16_t simMinutes() const { return _sim; }

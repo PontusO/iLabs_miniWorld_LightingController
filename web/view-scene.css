@@ -19,6 +19,9 @@
 .view-scene input[type="number"] { font-variant-numeric: tabular-nums; }
 .view-scene .field .switch { align-self: flex-start; margin-top: 8px; }
 
+/* The day while it follows the calendar: shown, not editable. */
+.view-scene .field input:disabled { color: var(--muted); border-style: dashed; }
+
 .view-scene .gg {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));

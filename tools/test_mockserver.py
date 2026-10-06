@@ -175,6 +175,33 @@ class BuildingsTest(unittest.TestCase):
         self.assertEqual(state.config_json()["buildings"], ["Old St"])
 
 
+class DateFromSystemTest(unittest.TestCase):
+    """PUT /api/scene/clock { "dateFromSystem": bool }: on follows today,
+    off keeps the day the scene is on, so turning it off does not jump."""
+
+    def test_status_carries_the_flag(self):
+        state = mockserver.SceneState()
+        self.assertIn("dateFromSystem", state.status_json())
+
+    def test_on_follows_today(self):
+        state = mockserver.SceneState()
+        state.apply_clock({"dayOfYear": 10})
+        self.assertFalse(state.status_json()["dateFromSystem"])
+        state.apply_clock({"dateFromSystem": True})
+        st = state.status_json()
+        self.assertTrue(st["dateFromSystem"])
+        self.assertEqual(st["dayOfYear"], time.localtime().tm_yday)
+
+    def test_off_keeps_the_current_day(self):
+        state = mockserver.SceneState()
+        state.apply_clock({"dayOfYear": 10})
+        state.apply_clock({"dateFromSystem": True})
+        state.apply_clock({"dateFromSystem": False})
+        st = state.status_json()
+        self.assertFalse(st["dateFromSystem"])
+        self.assertEqual(st["dayOfYear"], time.localtime().tm_yday)
+
+
 class MigrationTest(unittest.TestCase):
     def test_migration_flats_first(self):
         state = mockserver.SceneState()

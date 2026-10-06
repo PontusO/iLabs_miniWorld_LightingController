@@ -153,12 +153,26 @@
         u.speed = fld("Real minutes per day", u.speedIn);
         u.speed.hidden = true;
         u.keep = el("input", { type: "checkbox" });
+        // On, the day follows the calendar and the field only shows it; a
+        // day typed into the field turns it off. Off keeps the day the
+        // scene is on, so the town does not jump back to an old date.
+        u.sysdate = el("input", {
+            type: "checkbox", "aria-label": "Date from system",
+            onchange: function () {
+                u.doy.disabled = u.sysdate.checked;
+                sendClock({ dateFromSystem: u.sysdate.checked });
+            }
+        });
+        // Hidden until a status says the controller knows the key.
+        u.sysdateField = fld("Date from system", swtch(u.sysdate));
+        u.sysdateField.hidden = true;
 
         return el("section", { class: "card" },
             el("div", { class: "clock-head" }, u.time, u.lit),
             u.seg, u.wrap, u.ticks,
             el("div", { class: "gg narrow" },
-                fld("Day of year", u.doy), u.speed, fld("Keep", swtch(u.keep))),
+                fld("Day of year", u.doy), u.sysdateField, u.speed,
+                fld("Keep", swtch(u.keep))),
             u.doyOut);
     }
 
@@ -200,6 +214,12 @@
         u.speed.hidden = s.mode !== "accelerated";
         if (document.activeElement !== u.speedIn && typeof s.dayMinutes === "number") {
             u.speedIn.value = s.dayMinutes;
+        }
+        if (typeof s.dateFromSystem === "boolean") {
+            u.sysdateField.hidden = false;
+            u.sysdate.checked = s.dateFromSystem;
+            u.doy.disabled = s.dateFromSystem;
+            if (cfg && cfg.clock) cfg.clock.dateFromSystem = s.dateFromSystem;
         }
         if (document.activeElement !== u.doy) u.doy.value = s.dayOfYear;
         u.doyOut.textContent = "day " + s.dayOfYear + " = " + dateLabel(s.dayOfYear);

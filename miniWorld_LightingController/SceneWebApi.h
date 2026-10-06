@@ -20,7 +20,10 @@
       PUT  /api/scene/clock     drive the clock without touching flash:
                                 { "mode": "manual", "time": "19:40" }
                                 { "mode": "accelerated", "dayMinutes": 20 }
-                                { "dayOfYear": 355 }
+                                { "dayOfYear": 355 }    also turns off
+                                                        dateFromSystem
+                                { "dateFromSystem": true }  follow today;
+                                false stays on the day the scene is on
                                 { "enabled": false }
                                 Any subset. Add "persist": true to keep it.
       POST /api/scene/identify  { "lamp": n } blinks that lamp for a second
@@ -44,7 +47,8 @@
 
       { "time": "19:42", "minutes": 1182, "dayOfYear": 249,
         "dusk": "19:58", "dawn": "05:47", "sunset": "19:21", "sunrise": "06:24",
-        "mode": "real", "clockValid": true, "enabled": true,
+        "mode": "real", "dateFromSystem": true, "clockValid": true,
+        "enabled": true,
         "lit": 61, "active": 2, "lamps": 144,
         "units": [ { "name": "Andersson", "state": "awake", "lit": "kl" } ] }
 

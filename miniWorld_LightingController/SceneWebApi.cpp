@@ -34,6 +34,7 @@ void SceneWebApi::statusJson(String &body) {
 
     doc["mode"] = SceneConfig::modeName(Scene.config().mode);
     doc["dayMinutes"] = Scene.config().dayMinutes;
+    doc["dateFromSystem"] = Scene.config().dateFromSystem;
     doc["clockValid"] = Scene.clockValid();
     doc["enabled"] = Scene.enabled();
     doc["lit"] = Scene.litCount();
@@ -129,6 +130,11 @@ int SceneWebApi::putClock(const String &in, String &body) {
             return error(400, "dayOfYear must be 1..366", body);
         }
         Scene.setDayOfYear((uint16_t)d);
+    }
+
+    // After dayOfYear, so a body with both ends on the switch.
+    if (doc["dateFromSystem"].is<bool>()) {
+        Scene.setDateFromSystem(doc["dateFromSystem"]);
     }
 
     if (doc["enabled"].is<bool>()) {
