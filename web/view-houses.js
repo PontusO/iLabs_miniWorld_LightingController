@@ -51,6 +51,19 @@
         + '<path d="M8.6 7.4h6.8l3.2 7H5.4z"/>'
         + '<circle cx="12" cy="17.4" r="1.7"/></svg>';
 
+    // A house: roof, walls, door. In front of every building name, so the
+    // eye finds the headings in a long list; the units with no building get
+    // the same shape dashed, so the names still line up.
+    function houseSvg(none) {
+        return '<svg viewBox="0 0 24 24" width="20" height="20" '
+            + 'fill="none" stroke="currentColor" stroke-width="1.8" '
+            + 'stroke-linecap="round" stroke-linejoin="round" '
+            + (none ? 'stroke-dasharray="2 2.6" ' : '')
+            + 'aria-hidden="true" focusable="false">'
+            + '<path d="M3.5 11 12 4l8.5 7"/><path d="M5.8 9.4V20h12.4V9.4"/>'
+            + (none ? '' : '<path d="M10.2 20v-5.2h3.6V20"/>') + '</svg>';
+    }
+
     var cfg = null;      // the scene as loaded, edited in place
     var errs = [];       // blocking lamp error per unit, "" when good
     var warns = [];      // lamp shared with another unit, "" when none
@@ -761,7 +774,10 @@
             onclick: function () { addUnit(k < 0 ? "" : cfg.buildings[k]); }
         }, "Add unit");
         var head = el("div", { class: "bhead" },
-            el("h3", { class: "bname" }, name), add);
+            el("h3", { class: "bname" + (k < 0 ? " bnone" : "") },
+                el("span", { class: "bicon", html: houseSvg(k < 0) }),
+                el("span", { class: "btext" }, name)),
+            add);
         if (k >= 0) {
             head.appendChild(el("button", {
                 type: "button", class: "btn secondary bbtn bedit-open",

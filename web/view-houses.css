@@ -50,7 +50,7 @@
     flex: 1;
     min-width: 0;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
     margin: 0;
     padding-bottom: 4px;
     color: var(--muted);
@@ -65,6 +65,22 @@
     min-width: 12px;
     height: 1px;
     background: var(--line);
+}
+
+/* The house sits in front of the name in the accent, so the headings are
+   what the eye lands on in a long list; the dashed one stays muted. */
+.view-houses .bicon {
+    display: inline-flex;
+    flex: none;
+    color: var(--accent);
+}
+
+.view-houses .bnone .bicon { color: var(--muted); opacity: 0.7; }
+
+.view-houses .btext {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 /* Quieter than the buttons of the card: they act on one building. */
