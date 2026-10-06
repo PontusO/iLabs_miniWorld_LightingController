@@ -259,6 +259,8 @@ private:
     uint32_t _lastFlickerMs = 0;
     uint32_t _rng = 0x2545F491;
     int _sunForDoy = -1;
+    int _sunForTz = 0;              // the UTC offset the sun times were made with
+    uint32_t _tzCheckMs = 0;        // when that offset was last compared
 };
 
 extern SceneEngine Scene;

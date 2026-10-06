@@ -365,6 +365,23 @@ field in the unit editor. The firmware builds at 38 % RAM, the mock has
 tests for the rules, and the tab was driven over CDP at 390 and 320 px
 against the mock.
 
+### 5.12 Date from system, and sun times after the clock is set (done 2026-10-06)
+
+The Scene tab could turn `dateFromSystem` off, by typing a day, but not
+back on, and the bench board had sat on 22 September since the scrub of
+§5.8. A "Date from system" switch now sits beside Day of year, through
+`"dateFromSystem"` on `PUT /api/scene/clock` and in the status; off
+keeps the day the scene is on. Separately, `recomputeSun()` ran only
+when the day changed, so sun times made at boot with the configured
+offset (+60) before NTP stayed an hour early in summer time whenever
+the day did not change afterwards: with the date set by hand, and for
+the rest of the day after a summer or winter time change. The engine now
+also compares the UTC offset once a minute. On the board, date by hand
+on day 279 and a reboot: dawn 05:42 and dusk 18:08 before, 06:42 and
+19:08 after, the same as with the date from the system. NTP itself was
+measured at the same time: the time is valid 16 to 17 s after a soft
+reboot, within a second of the host; a cold power-up was not measured.
+
 ## 6. Things that were not verified and must be
 
 - **AL5887 register map.** Everything part-specific is in the define

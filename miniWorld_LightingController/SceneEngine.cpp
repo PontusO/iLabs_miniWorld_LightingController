@@ -213,6 +213,16 @@ void SceneEngine::updateClock(uint32_t nowMs) {
             break;
     }
 
+    // The offset is part of the answer as much as the day is. It moves
+    // when NTP first sets the clock, since until then there is only the
+    // configured fallback, and at a summer or winter time change, and on
+    // neither does the day move with it. Once a minute is plenty.
+    if (_sunForDoy >= 0 && nowMs - _tzCheckMs >= 60000UL) {
+        _tzCheckMs = nowMs;
+        if (localOffsetMinutes() != _sunForTz) {
+            _sunForDoy = -1;
+        }
+    }
     if ((int)_doy != _sunForDoy) {
         recomputeSun();
     }
@@ -235,6 +245,8 @@ void SceneEngine::recomputeSun() {
     if (_sunrise < 0) _sunrise = _dawn + 30;
 
     _sunForDoy = _doy;
+    _sunForTz = tz;
+    _tzCheckMs = millis();
 }
 
 // ---------------------------------------------------------------------------
