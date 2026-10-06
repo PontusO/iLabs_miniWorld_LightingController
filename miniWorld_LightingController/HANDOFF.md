@@ -76,7 +76,7 @@ it, and every web API stays a pure `(method, path, body)` function.
 | `LampWebApi.h/.cpp` | `/api/lamps/config, status, probe, test` | Per-bus status object done, checked against the mock |
 | `RgbLamps.h` | `setColor(module, r, g, b)` over Lamps | Done |
 | `Sun.h/.cpp` | Sunrise/sunset/civil twilight | **Verified** against Lund almanac |
-| `Scene.h/.cpp` | Models (rhythm and hours, up to 16, no lamps of their own) and units (up to 24, a name, a building, a model, rooms of up to 8 lamp ranges), clock, location, seed, JSON | Compiles, reviewed, not yet run on hardware |
+| `Scene.h/.cpp` | Models (rhythm and hours, up to 16, no lamps of their own) buildings (up to 24 names the units are grouped under) and units (up to 24, a name, a building, a model, rooms of up to 8 lamp ranges), clock, location, seed, JSON | Compiles, reviewed, not yet run on hardware |
 | `SceneEngine.h/.cpp` | The simulation, plus the event layer (day lights, dips, night wake-ups) and `evaluateUnits()` for a unit's rooms: one draw per room for a rhythm unit or a non-individual hours unit, one draw per lamp for an individual hours unit | Compiles, reviewed, not yet run on hardware |
 | `SceneWebApi.h/.cpp` | `/api/scene/config, status, clock, identify, presets`; `status` reports units, not groups or flats, and carries `loadError`, the loader's reason, only when a stored scene existed at boot and would not load; `presets` returns the nine model templates; `identify` blinks one lamp, or up to eight of them, so a lamp or a whole room can be found on the layout | Done |
 | `NetConfig.h/.cpp` | `/net.json`: credentials, hostname, GUI password, NTP, TZ | Compiles, reviewed |
@@ -91,7 +91,7 @@ it, and every web API stays a pure `(method, path, body)` function.
 | `web/` | SPA framework: `index.html`, `app.css`, `app.js`, seven views | Done, reviewed at 320 px and 390 px |
 | `web/view-scene.js/.css` | Scene view: clock mode, the horizon scrubber, location, seed | Compiles, reviewed, not yet run on hardware |
 | `web/view-models.js/.css` | Models view: one row per model with its kind and units-in-use count, the rhythm and hours editors, new model from a template, delete refused while a unit uses it | Compiles, reviewed, not yet run on hardware |
-| `web/view-houses.js/.css` | Houses view: units by building, the model selector, rooms in the range syntax, a Model link that opens the model's row | Compiles, reviewed, not yet run on hardware |
+| `web/view-houses.js/.css` | Houses view: units by building, buildings added, renamed and deleted from their heading with an Add unit in each, the building and model selectors, rooms in the range syntax, a Model link that opens the model's row | Compiles, reviewed, not yet run on hardware |
 | `web/view-home.js/.css` | Home strip: one chip per unit, the asleep, out, awake, away, open, closed, lit and dark glyphs | Compiles, reviewed, not yet run on hardware |
 | `web/view-system.js/.css` | System view: the device line, filesystem headroom, the firmware upload with the browser-side band, banner, stamp and MD5 checks, the wait for the new build, a reboot button | Done, verified on the board 2026-09-23, see §5.10 |
 | `tools/` | `buildweb.py`, `mockserver.py`, `apicheck.sh`, `ota.sh` | Done |
@@ -349,6 +349,22 @@ so the bar moves, then polls the status for the new stamp. A lost reply
 goes to the same wait rather than to a failure. The mock lags an upload
 by 3 s and resets its uptime on reboot so both waits run off-target. The page's identity check rests on the image carrying exactly one stamp-shaped string; a library that embeds its own `__DATE__ __TIME__` would make the page refuse every image while `ota.sh`, which reads the stamp from `BuildStamp.gen.h`, keeps working, and the Makefile stamps in the C locale so the month is always three ASCII letters.
 
+### 5.11 Buildings as a list (done 2026-10-06: the stored scene came back with Storgatan 3 in the list and units and models byte-identical to before; Hamngatan 7 added empty from the GUI on the board, saved, still there after a reboot; no loadError)
+
+A building used to be a free-text label on a unit, so a heading only
+existed once a unit named it. `/scene.json` now carries a top-level
+`"buildings"` list (`SCENE_MAX_BUILDINGS` 24, names of up to 23
+characters), and a unit still names its building rather than pointing
+into the list. On every load the units' buildings are looked up in the
+list, case-insensitively, and take its spelling; one the list does not
+have is added at the end, which is how a scene stored before the list
+existed gets one. The Houses tab has Add building next to Add unit, an
+Add unit and an Edit on every building heading (Edit renames, or
+deletes a building nobody is in), and a selector in place of the text
+field in the unit editor. The firmware builds at 38 % RAM, the mock has
+tests for the rules, and the tab was driven over CDP at 390 and 320 px
+against the mock.
+
 ## 6. Things that were not verified and must be
 
 - **AL5887 register map.** Everything part-specific is in the define
@@ -468,8 +484,11 @@ by 3 s and resets its uptime on reboot so both waits run off-target. The page's 
   touch the units in the same save. The migration puts flats first so
   the households keep the unit indices, and therefore the room keys,
   their draws hang on; only the groups, which never had per-unit draws,
-  get new ones. Building stays a label: nothing yet needs it to be more
-  than a heading on the Houses tab. Groups and household types, and the
+  get new ones. Building was a label until 2026-10-06, when it
+  became a list of its own so a building can exist before any unit is in
+  it. The units still name it rather than index it: nothing in the
+  engine reads a building, so an index would buy nothing and would cost
+  the same rename care models already need. Groups and household types, and the
   four retired household group behaviours of 2026-09-22, are gone; a
   household is a unit on a rhythm model like any other.
 - **Why the firmware goes over the air as a plain .bin and not gzip.**

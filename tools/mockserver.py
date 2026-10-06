@@ -72,6 +72,8 @@ FIRMWARE_REBOOT_S = 3   # the status keeps the old build this long after an uplo
 SCENE_NAME_LEN = 24
 SCENE_MAX_MODELS = 16
 SCENE_MAX_UNITS = 24
+# One building per unit is as many as the units can fill.
+SCENE_MAX_BUILDINGS = 24
 UNIT_MAX_ROOMS = 12
 ROOM_MAX_RANGES = 8
 
@@ -663,6 +665,59 @@ def clamp_units(units):
 
 
 # ---------------------------------------------------------------------------
+# Buildings. Scene.h: a list of names the units pick from, kept on its own so
+# a building with no units yet survives a save. A unit still carries its
+# building by name.
+# ---------------------------------------------------------------------------
+
+def building_name(v):
+    """Mirrors Scene.cpp's trimName(): leading blanks skipped, the rest cut
+    to SCENE_NAME_LEN - 1, trailing blanks dropped. Anything that is not a
+    string is an empty name."""
+    if not isinstance(v, str):
+        return ""
+    return v.lstrip()[:SCENE_NAME_LEN - 1].rstrip()
+
+
+def buildings_from_json(arr):
+    """The list as sent: blanks skipped, a name already in the list
+    (case-insensitively) skipped, more than SCENE_MAX_BUILDINGS refused."""
+    out = []
+    for v in arr:
+        name = building_name(v)
+        if not name or any(b.lower() == name.lower() for b in out):
+            continue
+        if len(out) >= SCENE_MAX_BUILDINGS:
+            raise ApiError(400, "too many buildings")
+        out.append(name)
+    return out
+
+
+def reconcile_buildings(buildings, units):
+    """Mirrors SceneConfig::fromJson()'s last pass: every unit's building is
+    in the list, under the list's spelling. A name the list does not have
+    is added, which is how a scene saved before the list existed gets one,
+    and a list that cannot take it refuses the document. Nothing is
+    changed until every unit has found its place, so a refusal leaves the
+    stored units as they were."""
+    names = []
+    for u in units:
+        name = building_name(u["building"])
+        if name:
+            match = next((b for b in buildings if b.lower() == name.lower()), None)
+            if match is None:
+                if len(buildings) >= SCENE_MAX_BUILDINGS:
+                    raise ApiError(400, "too many buildings")
+                buildings.append(name)
+                match = name
+            name = match
+        names.append(name)
+    for u, name in zip(units, names):
+        u["building"] = name
+    return buildings
+
+
+# ---------------------------------------------------------------------------
 # Migration. Spec section 5: a document with "groups" or "flats" and no
 # "models" was written before models and units existed. Flats first, so
 # their unit indices, and with them their room keys and their household
@@ -1056,6 +1111,7 @@ class SceneState:
         # stored, and then the status carries no "loadError" key at all.
         # The mock never fails a load by itself; a test sets this.
         self.load_error = None
+        self.buildings = []
 
         # The nine templates and no units is what a fresh device runs,
         # spec 2.3; the mock seeds the example town on top, spec 4.5.
@@ -1097,6 +1153,8 @@ class SceneState:
 
         # Manual clock anchor, minutes since midnight (0 = start manual at
         # a plausible evening hour so the town has something lit).
+        self.buildings = reconcile_buildings([], self.units)
+
         self._manual_minutes = 20 * 60
         self._anchor_wall = time.time()
         self._anchor_sim = self._wallclock_minutes()
@@ -1204,6 +1262,7 @@ class SceneState:
                 },
                 "seed": self.seed,
                 "models": [model_to_json(m) for m in self.models],
+                "buildings": list(self.buildings),
                 "units": [unit_to_json(u) for u in self.units],
             }
 
@@ -1301,6 +1360,11 @@ class SceneState:
 
         new_models = self.models
         new_units = self.units
+        buildings_in = data.get("buildings")
+        if isinstance(buildings_in, list):
+            new_buildings = buildings_from_json(buildings_in)
+        else:
+            new_buildings = list(self.buildings)
 
         if has_models:
             was_following = [u["model"] for u in self.units]
@@ -1335,8 +1399,11 @@ class SceneState:
             # The old shape, spec section 5: no "models" and no "units",
             # but "flats" or "groups" present.
             new_models, new_units = migrate_old(data)
+            # The old shape had no list: its buildings are its units'.
+            new_buildings = []
 
         clamp_units(new_units)
+        reconcile_buildings(new_buildings, new_units)
 
         manual_time_given = isinstance(clk, dict) and (
             isinstance(clk.get("manualTime"), str) or isinstance(clk.get("manualTime"), int)
@@ -1356,6 +1423,7 @@ class SceneState:
             self.dayOfYearOverride = new_day_of_year
             self.seed = new_seed
             self.models = new_models
+            self.buildings = new_buildings
             self.units = new_units
             if manual_time_given:
                 self._anchor_sim = self._manual_minutes

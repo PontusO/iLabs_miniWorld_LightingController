@@ -177,6 +177,7 @@ void SceneConfig::seedTemplates() {
         models[i].setTemplate((Template)i);
         strlcpy(models[i].name, templateTitle((Template)i), SCENE_NAME_LEN);
     }
+    buildingCount = 0;
     unitCount = 0;
 }
 
@@ -369,6 +370,31 @@ void SceneConfig::formatTime(int minutes, char *out, size_t len) {
 }
 
 // ---------------------------------------------------------------------------
+// Buildings
+// ---------------------------------------------------------------------------
+
+// A building name as it is kept: leading blanks skipped, the rest cut to
+// SCENE_NAME_LEN - 1, trailing blanks dropped. out and in may not overlap.
+static void trimName(char *out, const char *in) {
+    if (!in) in = "";
+    while (*in == ' ' || *in == '\t') in++;
+    strlcpy(out, in, SCENE_NAME_LEN);
+    size_t n = strlen(out);
+    while (n > 0 && (out[n - 1] == ' ' || out[n - 1] == '\t')) out[--n] = 0;
+}
+
+// The building with this name, compared case-insensitively; -1 when the
+// list has none.
+static int findBuilding(const SceneConfig &c, const char *name) {
+    for (uint8_t i = 0; i < c.buildingCount && i < SCENE_MAX_BUILDINGS; i++) {
+        if (!strcasecmp(c.buildings[i], name)) {
+            return (int)i;
+        }
+    }
+    return -1;
+}
+
+// ---------------------------------------------------------------------------
 // Clamp
 // ---------------------------------------------------------------------------
 
@@ -555,6 +581,11 @@ void SceneConfig::clamp() {
         }
         if ((uint8_t)M.onAnchor > 2) M.onAnchor = Anchor::Clock;
         if ((uint8_t)M.offAnchor > 2) M.offAnchor = Anchor::Clock;
+    }
+
+    if (buildingCount > SCENE_MAX_BUILDINGS) buildingCount = SCENE_MAX_BUILDINGS;
+    for (uint8_t b = 0; b < buildingCount; b++) {
+        buildings[b][SCENE_NAME_LEN - 1] = 0;
     }
 
     if (unitCount > SCENE_MAX_UNITS) unitCount = SCENE_MAX_UNITS;
@@ -750,6 +781,11 @@ void SceneConfig::toJson(String &out) const {
             o["morning"] = M.morning;
             o["individual"] = M.individual;
         }
+    }
+
+    JsonArray bs = doc["buildings"].to<JsonArray>();
+    for (uint8_t b = 0; b < buildingCount; b++) {
+        bs.add(buildings[b]);
     }
 
     JsonArray us = doc["units"].to<JsonArray>();
@@ -1049,6 +1085,25 @@ bool SceneConfig::fromJson(const String &in, String *error) {
 
     if (doc["seed"].is<uint32_t>()) next.seed = doc["seed"];
 
+    // The list as sent. Absent keeps the one held; the units' buildings are
+    // added to it at the end whichever it is.
+    JsonArrayConst bs = doc["buildings"];
+    if (!bs.isNull()) {
+        next.buildingCount = 0;
+        for (JsonVariantConst v : bs) {
+            char name[SCENE_NAME_LEN];
+            trimName(name, v.is<const char *>() ? v.as<const char *>() : "");
+            if (!name[0] || findBuilding(next, name) >= 0) {
+                continue;
+            }
+            if (next.buildingCount >= SCENE_MAX_BUILDINGS) {
+                if (error) *error = "too many buildings";
+                return false;
+            }
+            strlcpy(next.buildings[next.buildingCount++], name, SCENE_NAME_LEN);
+        }
+    }
+
     JsonArrayConst ms = doc["models"];
     JsonArrayConst us = doc["units"];
 
@@ -1205,7 +1260,9 @@ bool SceneConfig::fromJson(const String &in, String *error) {
                (!doc["flats"].isNull() || !doc["groups"].isNull())) {
         // The old shape. Flats first, so their unit indices, and with them
         // their room keys and their household draws, are the ones they had.
+        // It had no building list: its buildings are its flats'.
         next.modelCount = 0;
+        next.buildingCount = 0;
         next.unitCount = 0;
 
         // The model each template has been given, so two flats of one type
@@ -1300,6 +1357,29 @@ bool SceneConfig::fromJson(const String &in, String *error) {
     }
     // A document with none of the three keys leaves the models and the
     // units as they were, which is what a clock-only save looks like.
+
+    // Every unit's building is in the list, under the list's spelling. A
+    // name the list does not have is added, which is how a scene saved
+    // before the list existed gets one. This runs on next, so a refusal
+    // leaves the scene held as it was.
+    for (uint8_t u = 0; u < next.unitCount && u < SCENE_MAX_UNITS; u++) {
+        UnitConfig &U = next.units[u];
+        char name[SCENE_NAME_LEN];
+        trimName(name, U.building);
+        if (name[0]) {
+            int b = findBuilding(next, name);
+            if (b < 0) {
+                if (next.buildingCount >= SCENE_MAX_BUILDINGS) {
+                    if (error) *error = "too many buildings";
+                    return false;
+                }
+                b = next.buildingCount++;
+                strlcpy(next.buildings[b], name, SCENE_NAME_LEN);
+            }
+            strlcpy(name, next.buildings[b], SCENE_NAME_LEN);
+        }
+        strlcpy(U.building, name, SCENE_NAME_LEN);
+    }
 
     next.clamp();
     *this = next;

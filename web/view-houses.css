@@ -1,6 +1,7 @@
 /*
     view-houses.css - the Houses view. A building is a heading with its
-    units beneath it; a unit row is a name, what it is doing and a strip of
+    units beneath it, and the heading turns into a small form to rename or
+    delete it; a unit row is a name, what it is doing and a strip of
     lettered room discs that light with the rooms. Every selector sits
     under .view-houses.
 
@@ -26,17 +27,28 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+    flex-wrap: wrap;
     gap: 8px;
     margin-bottom: 4px;
 }
+
+.view-houses .cbtns { display: flex; flex-wrap: wrap; gap: 8px; }
 
 /* ---------------------------------------------------------- buildings --- */
 
 .view-houses .building { margin-top: 10px; }
 
 /* The address is the shelf the units stand on, so it carries the rule. */
+.view-houses .bhead {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
 .view-houses .bname {
     display: flex;
+    flex: 1;
+    min-width: 0;
     align-items: center;
     gap: 10px;
     margin: 0;
@@ -50,9 +62,44 @@
 .view-houses .bname::after {
     content: "";
     flex: 1;
+    min-width: 12px;
     height: 1px;
     background: var(--line);
 }
+
+/* Quieter than the buttons of the card: they act on one building. */
+.view-houses .bbtn {
+    flex: none;
+    padding: 0 10px;
+    font-size: 0.85em;
+    color: var(--muted);
+}
+
+.view-houses .bbtn:hover { color: var(--accent); border-color: var(--accent); }
+
+.view-houses .bempty { margin: 6px 0 10px 0; }
+
+.view-houses .bedit { padding: 4px 0 10px 0; }
+
+.view-houses .brow {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.view-houses .brow input {
+    flex: 1;
+    min-width: 0;
+    min-height: 44px;
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--text);
+    font: inherit;
+}
+
+.view-houses .bedit .btn.danger { margin-top: 0; }
 
 /* -------------------------------------------------------------- units --- */
 

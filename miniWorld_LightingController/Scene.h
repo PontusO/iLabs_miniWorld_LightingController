@@ -1,10 +1,11 @@
 /*
     Scene - what the town does over a day.
 
-    A scene is a list of models, a list of units, a clock and a location so
-    dusk and dawn can be computed. A model is a named way of behaving and
-    owns no lamps; a unit is a thing on the layout: a name, a building
-    label, a model and rooms of lamps. This file is the data model and its
+    A scene is a list of models, a list of buildings, a list of units, a
+    clock and a location so dusk and dawn can be computed. A model is a
+    named way of behaving and owns no lamps; a building is a name the units
+    are grouped under; a unit is a thing on the layout: a name, a building,
+    a model and rooms of lamps. This file is the data model and its
     JSON form; SceneEngine is what runs it.
 
     JSON, which is also the GUI contract:
@@ -42,9 +43,10 @@
             "morning": true,           lights before dawn on winter mornings
             "individual": true }       every lamp keeps its own moment
         ],
+        "buildings": [ "Storgatan 3", "Kyrkogatan 1" ],
         "units": [
           { "name": "Andersson",
-            "building": "Storgatan 3", GUI grouping only, may be empty
+            "building": "Storgatan 3", a building name, may be empty
             "model": "Family",         a model name, not an index
             "rooms": [ { "lamps": [4, "6-8"], "role": "kitchen" } ] }
         ]
@@ -95,6 +97,16 @@
     document does not keep is refused with "unknown model", which is what
     stops a save from deleting a model still in use.
 
+    Buildings are GUI grouping only and the engine never reads them. The
+    list is kept so a building with no units yet survives a save, and a
+    unit names its building rather than pointing into the list. Names are
+    trimmed, blanks dropped and a repeat (case-insensitively) skipped. On
+    every load each unit's building is looked up in the list and takes the
+    list's spelling; a name the list does not have is added at the end,
+    which is how a scene written before the list existed gets one. An
+    absent "buildings" keeps the list held, and a list that cannot take a
+    unit's building refuses the document with "too many buildings".
+
     Groups and flats, which models and units replaced, are still read: a
     document with "groups" or "flats" and no "models" is migrated on load,
     and the next save writes the new shape. There is no path back.
@@ -113,6 +125,8 @@
 // static SceneConfig copies carry all of them, and thirty-two put the
 // board at 41 % of its RAM against the 39 % it had before models and units.
 #define SCENE_MAX_UNITS    24
+// One building per unit is as many as the units can fill.
+#define SCENE_MAX_BUILDINGS 24
 #define UNIT_MAX_ROOMS     12
 #define ROOM_MAX_RANGES     8
 
@@ -224,7 +238,7 @@ struct ModelConfig {
 // the JSON carries the model's name.
 struct UnitConfig {
     char name[SCENE_NAME_LEN];          // "Andersson"
-    char building[SCENE_NAME_LEN];      // "Storgatan 3", GUI grouping only
+    char building[SCENE_NAME_LEN];      // "Storgatan 3", one of buildings[] or empty
     uint8_t model;
     uint8_t roomCount;
     RoomConfig rooms[UNIT_MAX_ROOMS];
@@ -252,6 +266,9 @@ struct SceneConfig {
 
     uint8_t modelCount = 0;
     ModelConfig models[SCENE_MAX_MODELS];
+
+    uint8_t buildingCount = 0;
+    char buildings[SCENE_MAX_BUILDINGS][SCENE_NAME_LEN];
 
     uint8_t unitCount = 0;
     UnitConfig units[SCENE_MAX_UNITS];

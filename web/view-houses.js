@@ -1,8 +1,10 @@
 // view-houses.js - Houses view: the things on the layout. Units are listed
 //                  under the building they are in, each row showing which
 //                  model it runs, what it is doing and which rooms are lit
-//                  right now; opening a row gives the unit its model and
-//                  its rooms. A room holds up to eight runs of lamps,
+//                  right now; opening a row gives the unit its building,
+//                  its model and its rooms. A building is added, renamed
+//                  and deleted from its heading, and a unit can be added
+//                  straight into it. A room holds up to eight runs of lamps,
 //                  written as 4, 6-8, and its blink button lights the room
 //                  on the layout, so the right one is easy to find.
 //                  Saving writes the whole scene config, models included.
@@ -32,6 +34,8 @@
     var STATES = ["awake", "asleep", "out", "away",
                   "open", "closed", "lit", "dark"];
     var MAX_UNITS = 24;      // SCENE_MAX_UNITS
+    var MAX_BUILDINGS = 24;  // SCENE_MAX_BUILDINGS
+    var NAME_MAX = 23;       // SCENE_NAME_LEN - 1
     var MAX_ROOMS = 12;      // UNIT_MAX_ROOMS
     var MAX_LAMP = 2047;     // LAMPS_MAX_LAMPS - 1
     var MAX_ROOM_RANGES = 8; // ROOM_MAX_RANGES
@@ -53,6 +57,7 @@
     var rows = [];       // per-unit nodes poll() writes into
     var lampMax = 0;     // lamps the controller reports, 0 until first status
     var expanded = -1, changed = false;
+    var editing = -1;    // the building whose heading is a form, -1 for none
     var mounted = 0;     // bumped by mount and unmount, drops late replies
     var status = null;   // the last /api/scene/status
     var u = {};
@@ -94,6 +99,156 @@
             }
         }
         return "";
+    }
+
+    // --- buildings --------------------------------------------------------
+
+    function sameName(a, b) {
+        return String(a).toLowerCase() === String(b).toLowerCase();
+    }
+
+    function findBuilding(name) {
+        var list = cfg.buildings;
+        for (var i = 0; i < list.length; i++) {
+            if (sameName(list[i], name)) return i;
+        }
+        return -1;
+    }
+
+    // What the device does on every load, done here too so a controller
+    // that sends no list, or a unit typed in before the list existed,
+    // still gives every building a heading: each unit's building is in the
+    // list, under the list's spelling.
+    function settleBuildings() {
+        if (!Array.isArray(cfg.buildings)) cfg.buildings = [];
+        cfg.buildings = cfg.buildings.map(function (b) {
+            return String(b).trim();
+        }).filter(function (b, i, all) {
+            if (!b) return false;
+            for (var j = 0; j < i; j++) if (sameName(all[j], b)) return false;
+            return true;
+        });
+        cfg.units.forEach(function (un) {
+            var b = (un.building || "").trim();
+            if (b) {
+                var k = findBuilding(b);
+                if (k < 0) k = cfg.buildings.push(b) - 1;
+                b = cfg.buildings[k];
+            }
+            un.building = b;
+        });
+    }
+
+    function unitsIn(name) {
+        return cfg.units.filter(function (un) {
+            return sameName(un.building || "", name);
+        }).length;
+    }
+
+    function unitsText(n) { return n + (n === 1 ? " unit" : " units"); }
+
+    // Why this name cannot be building k's, "" when it can.
+    function buildingErr(name, k) {
+        if (!name) return "A building needs a name.";
+        var other = findBuilding(name);
+        if (other >= 0 && other !== k) return "There is already a building called "
+            + cfg.buildings[other] + ".";
+        return "";
+    }
+
+    function addBuilding() {
+        if (!cfg) return;
+        if (cfg.buildings.length >= MAX_BUILDINGS) {
+            App.toast("The controller holds at most " + MAX_BUILDINGS
+                + " buildings", "error");
+            return;
+        }
+        var n = cfg.buildings.length + 1, name;
+        do { name = "Building " + n++; } while (findBuilding(name) >= 0);
+        cfg.buildings.push(name);
+        editing = cfg.buildings.length - 1;
+        touch();
+        render();
+        var input = u.list.querySelector(".bedit input");
+        if (input) {
+            input.focus();
+            input.select();
+        }
+    }
+
+    // A rename reaches the units at once: they carry the name, and there is
+    // nothing else on this page that keeps the old one.
+    function renameBuilding(k, name) {
+        var old = cfg.buildings[k];
+        if (old === name) return;
+        cfg.units.forEach(function (un) {
+            if (sameName(un.building || "", old)) un.building = name;
+        });
+        cfg.buildings[k] = name;
+        touch();
+    }
+
+    // The heading of building k, as a form: the name, Done, and Delete,
+    // which only goes through for a building with nobody in it.
+    function buildingForm(k) {
+        var err = el("p", { class: "err", role: "alert", hidden: true });
+        var input = el("input", {
+            type: "text", maxlength: NAME_MAX, value: cfg.buildings[k],
+            "aria-label": "Building name",
+            oninput: function () { setNote(err, ""); },
+            onkeydown: function (ev) {
+                if (ev.key === "Enter") {
+                    ev.preventDefault();
+                    done();
+                } else if (ev.key === "Escape") {
+                    ev.preventDefault();
+                    close();
+                }
+            }
+        });
+        function close() {
+            editing = -1;
+            render();
+            // Only real buildings have an Edit, so k is its place.
+            var head = u.list.querySelectorAll(".bedit-open")[k];
+            if (head) head.focus();
+        }
+        function done() {
+            var name = input.value.trim();
+            var why = buildingErr(name, k);
+            if (why) {
+                setNote(err, why);
+                input.focus();
+                return;
+            }
+            renameBuilding(k, name);
+            close();
+        }
+        var del = el("button", { type: "button", class: "btn danger bdel" },
+            "Delete building");
+        del.addEventListener("click", function () {
+            var n = unitsIn(cfg.buildings[k]);
+            if (n) {
+                setNote(err, "Building in use by " + unitsText(n)
+                    + ". Move them to another building first.");
+                return;
+            }
+            if (!del.armed) {
+                del.armed = true;
+                del.textContent = "Tap again to delete";
+                return;
+            }
+            cfg.buildings.splice(k, 1);
+            editing = -1;
+            touch();
+            render();
+            if (u.addBuilding) u.addBuilding.focus();
+        });
+        return el("div", { class: "bedit" },
+            el("div", { class: "brow" }, input,
+                el("button", { type: "button", class: "btn primary", onclick: done },
+                    "Done")),
+            err, del);
     }
 
     // --- validation -------------------------------------------------------
@@ -455,11 +610,18 @@
                 touch();
             }
         });
-        var building = el("input", {
-            type: "text", maxlength: 23, value: un.building || "",
-            placeholder: NO_BUILDING,
-            oninput: function (ev) { un.building = ev.target.value; touch(); }
-        });
+        // The unit moves under its new heading at once, and the selector
+        // keeps the focus it had.
+        var building = sel([""].concat(cfg.buildings), un.building || "",
+            function (b) { return b || NO_BUILDING; },
+            function (ev) {
+                un.building = ev.target.value;
+                touch();
+                render();
+                var again = u.list.querySelector(".uform .ubuilding");
+                if (again) again.focus();
+            });
+        building.className = "ubuilding";
 
         // What the unit does is the model's business, so the label is the
         // way to the tab that owns it.
@@ -588,13 +750,40 @@
         return node;
     }
 
-    function buildingOf(un) {
-        return (un.building || "").trim() || NO_BUILDING;
+    // The heading of one building: its name, a way to add a unit straight
+    // into it, and, for a real building, a way to rename or delete it. k is
+    // the building's index, -1 for the units with no building.
+    function buildingHead(k) {
+        var name = k < 0 ? NO_BUILDING : cfg.buildings[k];
+        var add = el("button", {
+            type: "button", class: "btn secondary bbtn",
+            "aria-label": "Add unit to " + name,
+            onclick: function () { addUnit(k < 0 ? "" : cfg.buildings[k]); }
+        }, "Add unit");
+        var head = el("div", { class: "bhead" },
+            el("h3", { class: "bname" }, name), add);
+        if (k >= 0) {
+            head.appendChild(el("button", {
+                type: "button", class: "btn secondary bbtn bedit-open",
+                "aria-label": "Rename or delete " + name,
+                onclick: function () {
+                    editing = k;
+                    render();
+                    var input = u.list.querySelector(".bedit input");
+                    if (input) {
+                        input.focus();
+                        input.select();
+                    }
+                }
+            }, "Edit"));
+        }
+        return head;
     }
 
-    // Units sit under the building they are in, in the order the buildings
-    // first appear, except that a unit with no building comes first: a
-    // street is not in a house.
+    // Units sit under the building they are in, in the order of the list,
+    // except that units with no building come first: a street is not in a
+    // house. A building nobody is in yet still has its heading, so a unit
+    // can be added to it.
     function render() {
         rows = [];
         u.list.innerHTML = "";
@@ -603,34 +792,41 @@
             return;
         }
         check();
-        if (!cfg.units.length) {
+        if (!cfg.units.length && !cfg.buildings.length) {
             u.list.appendChild(el("p", { class: "hint" },
-                "No units yet. Add one and put it on a model."));
+                "No units yet. Add a building, or a unit, and put it on a model."));
         }
-        var order = [], boxes = {};
-        function box(b) {
-            if (!boxes[b]) {
-                boxes[b] = el("div", { class: "bunits" });
-                order.push(b);
-            }
-            return boxes[b];
-        }
-        cfg.units.forEach(function (un) {
-            if (buildingOf(un) === NO_BUILDING) box(NO_BUILDING);
+        var loose = el("div", { class: "bunits" });
+        var boxes = cfg.buildings.map(function () {
+            return el("div", { class: "bunits" });
         });
-        cfg.units.forEach(function (un) { box(buildingOf(un)); });
-        order.forEach(function (b) {
-            u.list.appendChild(el("div", { class: "building" },
-                el("h3", { class: "bname" }, b), boxes[b]));
-        });
+        var anyLoose = false;
         cfg.units.forEach(function (un, i) {
-            boxes[buildingOf(un)].appendChild(unitRow(un, i));
+            var k = un.building ? findBuilding(un.building) : -1;
+            if (k < 0) anyLoose = true;
+            (k < 0 ? loose : boxes[k]).appendChild(unitRow(un, i));
         });
+        if (anyLoose) {
+            u.list.appendChild(el("div", { class: "building" },
+                buildingHead(-1), loose));
+        }
+        cfg.buildings.forEach(function (b, k) {
+            if (!boxes[k].childNodes.length) {
+                boxes[k].appendChild(el("p", { class: "hint bempty" },
+                    "No units yet."));
+            }
+            u.list.appendChild(el("div", { class: "building" },
+                editing === k ? buildingForm(k) : buildingHead(k), boxes[k]));
+        });
+        if (u.addBuilding) {
+            u.addBuilding.disabled = cfg.buildings.length >= MAX_BUILDINGS;
+        }
         paint();
         updateSave();
     }
 
-    function addUnit() {
+    // building is the name the new unit goes into, "" for none.
+    function addUnit(building) {
         if (!cfg) return;
         if (cfg.units.length >= MAX_UNITS) {
             App.toast("The controller holds at most " + MAX_UNITS + " units",
@@ -644,7 +840,8 @@
             return;
         }
         cfg.units.push({
-            name: "Unit " + (cfg.units.length + 1), building: "",
+            name: "Unit " + (cfg.units.length + 1),
+            building: typeof building === "string" ? building : "",
             model: names[0], rooms: []
         });
         expanded = cfg.units.length - 1;
@@ -715,14 +912,19 @@
         errs = [];
         warns = [];
         expanded = -1;
+        editing = -1;
         changed = false;
         status = null;
         u = {};
 
         u.list = el("div", { class: "ulist" });
         u.add = el("button", {
-            type: "button", class: "btn secondary", onclick: addUnit
+            type: "button", class: "btn secondary",
+            onclick: function () { addUnit(""); }
         }, "Add unit");
+        u.addBuilding = el("button", {
+            type: "button", class: "btn secondary", onclick: addBuilding
+        }, "Add building");
         u.save = el("button", {
             type: "button", class: "btn primary", disabled: true, onclick: save
         }, "Save houses");
@@ -731,7 +933,8 @@
         root.appendChild(el("div", { class: "view-houses" },
             el("section", { class: "card" },
                 el("div", { class: "chead" },
-                    el("h2", null, "Units"), u.add),
+                    el("h2", null, "Units"),
+                    el("div", { class: "cbtns" }, u.addBuilding, u.add)),
                 u.list,
                 el("div", { class: "actions" }, u.save, u.mark))));
         render();
@@ -749,6 +952,7 @@
                 if (!Array.isArray(un.rooms)) un.rooms = [];
                 un.rooms.forEach(fromJson);
             });
+            settleBuildings();
             render();
             poll();
         }, function (e) {

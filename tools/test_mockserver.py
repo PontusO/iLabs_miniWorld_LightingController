@@ -108,6 +108,73 @@ class RejectionTest(unittest.TestCase):
         self.assertEqual(cm.exception.message, "too many ranges")
 
 
+class BuildingsTest(unittest.TestCase):
+    """The building list, Scene.h: names a unit picks from, kept on their
+    own so a building with no units yet survives a save."""
+
+    def test_seed_lists_the_buildings_the_units_use(self):
+        state = mockserver.SceneState()
+        self.assertEqual(state.config_json()["buildings"],
+                         ["Storgatan 3", "Kyrkogatan 1"])
+
+    def test_empty_building_survives_a_save(self):
+        state = mockserver.SceneState()
+        doc = state.config_json()
+        doc["buildings"].append("Hamngatan 7")
+        state.apply_config(doc)
+        self.assertEqual(state.config_json()["buildings"],
+                         ["Storgatan 3", "Kyrkogatan 1", "Hamngatan 7"])
+
+    def test_names_are_trimmed_and_deduplicated(self):
+        state = mockserver.SceneState()
+        state.apply_config({"buildings": ["  A  ", "", "a", 7, "B"],
+                            "units": []})
+        self.assertEqual(state.config_json()["buildings"], ["A", "B"])
+
+    def test_unit_building_missing_from_the_list_is_added(self):
+        state = mockserver.SceneState()
+        state.apply_config({
+            "buildings": ["Bay St"],
+            "units": [
+                {"name": "X", "building": " bay st ", "model": "Family", "rooms": []},
+                {"name": "Y", "building": "Mill Rd", "model": "Family", "rooms": []},
+                {"name": "Z", "building": "", "model": "Family", "rooms": []},
+            ],
+        })
+        out = state.config_json()
+        self.assertEqual(out["buildings"], ["Bay St", "Mill Rd"])
+        self.assertEqual([u["building"] for u in out["units"]],
+                         ["Bay St", "Mill Rd", ""])
+
+    def test_absent_list_keeps_the_stored_one(self):
+        state = mockserver.SceneState()
+        state.apply_config({"buildings": ["Solo"], "units": []})
+        state.apply_config({"seed": 5})
+        self.assertEqual(state.config_json()["buildings"], ["Solo"])
+
+    def test_too_many_buildings_rejected(self):
+        state = mockserver.SceneState()
+        names = ["B%d" % i for i in range(mockserver.SCENE_MAX_BUILDINGS + 1)]
+        with self.assertRaises(mockserver.ApiError) as cm:
+            state.apply_config({"buildings": names, "units": []})
+        self.assertEqual(cm.exception.message, "too many buildings")
+
+    def test_unit_building_past_a_full_list_rejected(self):
+        state = mockserver.SceneState()
+        names = ["B%d" % i for i in range(mockserver.SCENE_MAX_BUILDINGS)]
+        with self.assertRaises(mockserver.ApiError) as cm:
+            state.apply_config({"buildings": names, "units": [
+                {"name": "X", "building": "One more", "model": "Family",
+                 "rooms": []}]})
+        self.assertEqual(cm.exception.message, "too many buildings")
+
+    def test_migrated_flats_bring_their_buildings(self):
+        state = mockserver.SceneState()
+        state.apply_config({"flats": [
+            {"name": "A", "building": "Old St", "type": "family", "rooms": []}]})
+        self.assertEqual(state.config_json()["buildings"], ["Old St"])
+
+
 class MigrationTest(unittest.TestCase):
     def test_migration_flats_first(self):
         state = mockserver.SceneState()
